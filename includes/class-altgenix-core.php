@@ -12,11 +12,22 @@ class ALTGENIX_Core {
         add_action( 'wp_ajax_altgenix_mark_all_processed', array( $this, 'ajax_mark_all_processed' ) );
     }
 
+    /**
+     * Schedule background processing for a newly uploaded image attachment.
+     *
+     * M-01 FIX: Added wp_rand() offset to prevent WordPress cron event deduplication
+     * when multiple images are uploaded simultaneously (e.g., drag-and-drop).
+     *
+     * @param int $attachment_id The attachment post ID.
+     */
     public function schedule_background_processing( $attachment_id ) {
         if ( ! wp_attachment_is_image( $attachment_id ) ) return;
-        wp_schedule_single_event( time(), 'altgenix_background_process_image', array( $attachment_id ) );
+        wp_schedule_single_event( time() + wp_rand( 1, 5 ), 'altgenix_background_process_image', array( $attachment_id ) );
     }
 
+    /**
+     * AJAX handler: Get all pending (unprocessed) image attachment IDs.
+     */
     public function ajax_get_pending() {
         check_ajax_referer( 'altgenix_ajax_nonce', 'nonce' );
         if ( ! current_user_can( 'upload_files' ) ) { wp_send_json_error( 'Unauthorized Access' ); }
@@ -43,39 +54,73 @@ class ALTGENIX_Core {
         wp_send_json_success( $valid_ids );
     }
 
-   public function ajax_process_image() {
+    /**
+     * AJAX handler: Process a single image by its attachment ID.
+     *
+     * C-04 FIX: Added post type and image type validation to prevent IDOR attacks.
+     * M-02 FIX: Added explicit else block and error handling.
+     */
+    public function ajax_process_image() {
         check_ajax_referer( 'altgenix_ajax_nonce', 'nonce' );
         if ( ! current_user_can( 'upload_files' ) ) { wp_send_json_error( 'Unauthorized Access' ); }
         
         $image_id = isset( $_POST['image_id'] ) ? intval( $_POST['image_id'] ) : 0;
         
-        if ( $image_id ) { 
+        // C-04 FIX: Validate that the supplied ID is actually an image attachment.
+        if ( $image_id && get_post_type( $image_id ) === 'attachment' && wp_attachment_is_image( $image_id ) ) {
             delete_post_meta( $image_id, '_altgenix_processed' );
             $this->process_new_attachment( $image_id, true ); 
-            wp_send_json_success(); 
+            wp_send_json_success();
+        } else {
+            wp_send_json_error( array( 'message' => 'Invalid or non-image attachment ID.' ) );
         }
-        wp_send_json_error();
     }
 
+    /**
+     * AJAX handler: Mark all existing images as processed in bulk.
+     *
+     * C-01 FIX: Uses $wpdb->prepare() for the INSERT query.
+     * M-07 FIX: Checks $wpdb->query() return value before reporting success.
+     */
     public function ajax_mark_all_processed() {
         check_ajax_referer( 'altgenix_ajax_nonce', 'nonce' );
         if ( ! current_user_can( 'upload_files' ) ) { wp_send_json_error( 'Unauthorized Access' ); }
 
         global $wpdb;
         
-        $sql = "INSERT IGNORE INTO {$wpdb->postmeta} (post_id, meta_key, meta_value) 
-                SELECT p.ID, '_altgenix_processed', '1' 
+        // C-01 FIX: Parameterize meta_key and meta_value with $wpdb->prepare().
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+        $result = $wpdb->query(
+            $wpdb->prepare(
+                "INSERT IGNORE INTO {$wpdb->postmeta} (post_id, meta_key, meta_value) 
+                SELECT p.ID, %s, %s 
                 FROM {$wpdb->posts} p 
-                LEFT JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id AND pm.meta_key = '_altgenix_processed'
+                LEFT JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id AND pm.meta_key = %s
                 WHERE p.post_type = 'attachment' 
                 AND p.post_mime_type IN ('image/jpeg', 'image/png', 'image/webp') 
-                AND pm.post_id IS NULL";
-                
-        $wpdb->query( $sql );
+                AND pm.post_id IS NULL",
+                '_altgenix_processed',
+                '1',
+                '_altgenix_processed'
+            )
+        );
+
+        // M-07 FIX: Check query result before reporting success.
+        if ( $result === false ) {
+            wp_send_json_error( array( 'message' => 'Database query failed. Please try again.' ) );
+        }
 
         wp_send_json_success( array( 'message' => 'All old media marked as processed!' ) );
     }
 
+    /**
+     * Apply filename-based fallback metadata when AI is unavailable.
+     *
+     * @param int    $attachment_id The attachment post ID.
+     * @param string $file_path     Absolute path to the image file.
+     * @param array  $options       Plugin settings array.
+     * @param bool   $is_bulk       Whether this is a bulk processing operation.
+     */
     private function apply_filename_fallback( $attachment_id, $file_path, $options, $is_bulk ) {
         $gen_alt = !empty( $options['gen_alt'] );
         $gen_title = !empty( $options['gen_title'] );
@@ -102,13 +147,19 @@ class ALTGENIX_Core {
         }
     }
 
+    /**
+     * Process a newly uploaded attachment: generate metadata via AI or filename fallback.
+     *
+     * @param int  $attachment_id The attachment post ID.
+     * @param bool $is_bulk       Whether this is a bulk/re-processing operation.
+     */
     public function process_new_attachment( $attachment_id, $is_bulk = false ) {
         if ( ! wp_attachment_is_image( $attachment_id ) ) return;
         
         if ( get_post_meta( $attachment_id, '_altgenix_processed', true ) && !$is_bulk ) return;
 
         $options = get_option( 'altgenix_settings', array() );
-        $mode = isset( $options['mode'] ) ? $options['mode'] : 'fallback'; // Default fallback
+        $mode = isset( $options['mode'] ) ? $options['mode'] : 'fallback';
         $gen_alt = !empty( $options['gen_alt'] );
         $gen_title = !empty( $options['gen_title'] );
         $gen_caption = !empty( $options['gen_caption'] );
@@ -136,20 +187,23 @@ class ALTGENIX_Core {
 
         $api_response = $api->generate_advanced_meta( $file_path, $options );
 
-        if ( strpos( $api_response, 'API_ERROR|' ) === 0 ) {
-            $exact_error = str_replace( 'API_ERROR|', '', $api_response );
-            $lower_err = strtolower( $exact_error );
+        if ( is_wp_error( $api_response ) ) {
+            $error_message = $api_response->get_error_message();
+            $lower_err = strtolower( $error_message );
             
-            if ( strpos( $lower_err, 'large' ) !== false || strpos( $lower_err, 'safety' ) !== false || strpos( $lower_err, 'block' ) !== false ) {
+            if ( strpos( $lower_err, 'large' ) !== false || strpos( $lower_err, 'safety' ) !== false || strpos( $lower_err, 'block' ) !== false || strpos( $lower_err, 'limit' ) !== false || strpos( $lower_err, 'demand' ) !== false ) {
                 $this->apply_filename_fallback( $attachment_id, $file_path, $options, $is_bulk );
             } else {
-                wp_update_post( array( 'ID' => $attachment_id, 'post_content' => 'AI Error: ' . sanitize_text_field( $exact_error ) ) );
+                wp_update_post( array( 'ID' => $attachment_id, 'post_content' => 'AI Error: ' . sanitize_text_field( $error_message ) ) );
                 delete_post_meta( $attachment_id, '_altgenix_processed' ); 
             }
             return;
         }
 
-        $clean_json = trim( $api_response );
+        // Success path — $api_response is now an array with 'text' key.
+        $raw_text = isset( $api_response['text'] ) ? $api_response['text'] : '';
+
+        $clean_json = trim( $raw_text );
         if ( strpos( $clean_json, '```json' ) !== false || strpos( $clean_json, '```' ) !== false ) {
             $clean_json = str_replace( array( '```json', '```' ), '', $clean_json );
             $clean_json = trim( $clean_json );
@@ -180,6 +234,16 @@ class ALTGENIX_Core {
         }
     }
 
+    /**
+     * Physically rename an attachment file and all its generated thumbnails.
+     *
+     * M-03 FIX: Thumbnail names are now derived from the actual unique filename
+     * assigned to the main file, preventing collisions when multiple images
+     * produce the same slug.
+     *
+     * @param int    $attachment_id The attachment post ID.
+     * @param string $new_slug      The desired slug for the new filename.
+     */
     private function rename_physical_file( $attachment_id, $new_slug ) {
         $file_path = get_attached_file( $attachment_id );
         if ( ! $file_path || ! file_exists( $file_path ) ) return;
@@ -190,6 +254,10 @@ class ALTGENIX_Core {
 
         $new_file_name = wp_unique_filename( $info['dirname'], $new_slug . '.' . $ext );
         $new_file_path = $info['dirname'] . '/' . $new_file_name;
+
+        // M-03 FIX: Extract the actual base name (without extension) from the unique filename.
+        // This ensures thumbnails use the same unique base, preventing overwrites.
+        $actual_base = pathinfo( $new_file_name, PATHINFO_FILENAME );
 
         require_once ABSPATH . 'wp-admin/includes/file.php';
         $filesystem_initialized = WP_Filesystem();
@@ -215,7 +283,9 @@ class ALTGENIX_Core {
                     foreach ( $meta['sizes'] as $size => $size_info ) {
                         $old_thumb_path = $info['dirname'] . '/' . $size_info['file'];
                         $thumb_ext = pathinfo( $size_info['file'], PATHINFO_EXTENSION );
-                        $thumb_new_name = $new_slug . '-' . $size_info['width'] . 'x' . $size_info['height'] . '.' . $thumb_ext;
+
+                        // M-03 FIX: Use the unique $actual_base for thumbnails to prevent collisions.
+                        $thumb_new_name = $actual_base . '-' . $size_info['width'] . 'x' . $size_info['height'] . '.' . $thumb_ext;
                         $new_thumb_path = $info['dirname'] . '/' . $thumb_new_name;
 
                         if ( file_exists( $old_thumb_path ) ) {
