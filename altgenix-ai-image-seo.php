@@ -3,7 +3,7 @@
  * Plugin Name: AltGenix AI Image SEO
  * Plugin URI:  https://github.com/kabeer-qureshi/altgenix-ai-image-seo/
  * Description: Automatically generate SEO-optimized Alt Text, Titles, and Descriptions for uploaded images using Google Gemini Vision AI.
- * Version:     1.0.0
+ * Version:     1.0.1
  * Author:      Abdul Kabeer
  * Author URI:  https://www.linkedin.com/in/abdul-kabeer-b959682b4/
  * License:     GPLv2 or later
@@ -15,9 +15,15 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit( 'Direct access is not allowed.' );
 }
 
-define( 'ALTGENIX_VERSION', '1.0.0' );
-define( 'ALTGENIX_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
-define( 'ALTGENIX_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
+if ( ! defined( 'ALTGENIX_VERSION' ) ) {
+    define( 'ALTGENIX_VERSION', '1.0.1' );
+}
+if ( ! defined( 'ALTGENIX_PLUGIN_DIR' ) ) {
+    define( 'ALTGENIX_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
+}
+if ( ! defined( 'ALTGENIX_PLUGIN_URL' ) ) {
+    define( 'ALTGENIX_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
+}
 
 class ALTGENIX_Plugin_Init {
     public function __construct() {
