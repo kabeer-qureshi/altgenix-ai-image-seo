@@ -1,6 +1,54 @@
 jQuery(document).ready(function($) {
-    
+
+    /**
+     * Background auto-processor for freshly uploaded images.
+     *
+     * The upload request only flags new images server-side; this routine — running
+     * on Media / editor pages — picks them up within seconds and processes them via
+     * AJAX, so generation no longer waits for a WP-Cron page reload and the upload
+     * itself is never blocked. Only images uploaded after activation are touched
+     * (the existing library is left to the manual Bulk Optimizer).
+     */
+    var altgenixAutoBusy = false;
+
+    function altgenixRunAutoQueue() {
+        if (altgenixAutoBusy || typeof altgenix_ajax === 'undefined') { return; }
+        altgenixAutoBusy = true;
+        $.post(altgenix_ajax.url, { action: 'altgenix_get_auto_queue', nonce: altgenix_ajax.nonce })
+            .done(function(res) {
+                if (res && res.success && res.data && res.data.length) {
+                    altgenixProcessAutoQueue(res.data, 0);
+                } else {
+                    altgenixAutoBusy = false;
+                }
+            })
+            .fail(function() { altgenixAutoBusy = false; });
+    }
+
+    function altgenixProcessAutoQueue(ids, index) {
+        if (index >= ids.length) {
+            altgenixAutoBusy = false;
+            // A batch finished — check again shortly in case more arrived meanwhile.
+            setTimeout(altgenixRunAutoQueue, 1500);
+            return;
+        }
+        $.post(altgenix_ajax.url, { action: 'altgenix_process_auto', image_id: ids[index], nonce: altgenix_ajax.nonce })
+            .always(function() {
+                // Space requests out to stay friendly to the AI provider's rate limits.
+                setTimeout(function() { altgenixProcessAutoQueue(ids, index + 1); }, 1200);
+            });
+    }
+
+    if (typeof altgenix_ajax !== 'undefined') {
+        altgenixRunAutoQueue();
+        // Poll while the user stays on the page so uploads made now get picked up too.
+        setInterval(altgenixRunAutoQueue, 12000);
+    }
+
     $('.altgenix-select2').select2({ minimumResultsForSearch: Infinity, width: '160px' });
+
+    // Language picker: keep the search box (the list is long) and let it fill its row.
+    $('.altgenix-lang-select').select2({ width: '100%' });
 
     $('#altgenix-apply-filter').on('click', function(e) {
         e.preventDefault();
@@ -34,13 +82,40 @@ jQuery(document).ready(function($) {
 
     $('#altgenix_mode').on('change', function() {
         if ($(this).val() === 'fallback') {
+            $('#altgenix_provider_row').slideUp();
             $('#altgenix_api_row').slideUp();
+            $('#altgenix_lang_row').slideUp();
             $('.altgenix-length-col').fadeOut();
         } else {
+            $('#altgenix_provider_row').slideDown();
             $('#altgenix_api_row').slideDown();
+            $('#altgenix_lang_row').slideDown();
             $('.altgenix-length-col').fadeIn();
         }
     });
+
+    // Provider-specific API key hint + "get key" link.
+    var altgenixProviderInfo = {
+        gemini: { placeholder: 'AIzaSy...',  link: 'https://aistudio.google.com/app/apikey',        label: 'Get your free Google AI Studio key' },
+        openai: { placeholder: 'sk-...',     link: 'https://platform.openai.com/api-keys',          label: 'Get your OpenAI API key' },
+        claude: { placeholder: 'sk-ant-...', link: 'https://console.anthropic.com/settings/keys',   label: 'Get your Anthropic Claude key' }
+    };
+
+    function altgenixUpdateProviderHelp() {
+        var provider = $('#altgenix_provider').val() || 'gemini';
+        var info = altgenixProviderInfo[provider] || altgenixProviderInfo.gemini;
+        $('#altgenix_api_key').attr('placeholder', info.placeholder);
+        $('#altgenix_key_help_link').attr('href', info.link).text(info.label);
+    }
+
+    $('#altgenix_provider').on('change', function() {
+        altgenixUpdateProviderHelp();
+        // Switching providers needs a different key — clear & unlock the field so the old
+        // provider's key doesn't carry over into the new one.
+        $('#altgenix_api_key').prop('readonly', false).val('').focus();
+    });
+
+    altgenixUpdateProviderHelp();
 
     // Tabs Navigation
     $('.altgenix-tab-link').on('click', function(e) {
