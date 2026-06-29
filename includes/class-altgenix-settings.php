@@ -55,52 +55,57 @@ class ALTGENIX_Settings {
             $sanitized[ $len_key ] = isset( $input[ $len_key ] ) && in_array( $input[ $len_key ], $allowed_lengths, true ) ? $input[ $len_key ] : $default_val;
         }
         
-        update_option( 'altgenix_valid_models', array() ); 
-        
+        $allowed_languages     = array_merge( array( 'auto' ), array_keys( ALTGENIX_API::supported_languages() ) );
+        $sanitized['language'] = isset( $input['language'] ) && in_array( $input['language'], $allowed_languages, true ) ? $input['language'] : 'auto';
+
+        $sanitized['provider'] = isset( $input['provider'] ) && in_array( $input['provider'], ALTGENIX_API::supported_providers(), true ) ? $input['provider'] : 'gemini';
+
+        // Only (re)verify the key against the provider when something relevant changes —
+        // the key OR the provider. Re-verifying on every save is slow and, if the provider
+        // is momentarily unreachable, would wrongly revert a working configuration to
+        // fallback mode just because a checkbox or length was changed.
+        $previous_settings = get_option( 'altgenix_settings', array() );
+        $previous_key      = isset( $previous_settings['api_key'] ) ? $previous_settings['api_key'] : '';
+        $previous_provider = isset( $previous_settings['provider'] ) ? $previous_settings['provider'] : 'gemini';
+        $existing_models   = get_option( 'altgenix_valid_models', array() );
+        if ( ! is_array( $existing_models ) ) { $existing_models = array(); }
+
+        $unchanged = ( $sanitized['api_key'] === $previous_key && $sanitized['provider'] === $previous_provider );
+
         // API Verification & Auto-Revert Logic
         if ( $sanitized['mode'] === 'ai' ) {
             if ( empty( $sanitized['api_key'] ) ) {
+                update_option( 'altgenix_valid_models', array() );
                 add_settings_error( 'altgenix_setting_group', 'missing_api_key', 'API Key is required for AI Mode. Reverted to Original Filename mode.', 'error' );
                 $sanitized['mode'] = 'fallback';
+            } elseif ( $unchanged && ! empty( $existing_models ) ) {
+                // Key and provider unchanged, models already discovered — keep them, skip the call.
+                add_settings_error( 'altgenix_setting_group', 'valid_api_key', 'Settings saved. ' . count( $existing_models ) . ' AI model(s) active.', 'success' );
             } else {
-                $url = 'https://generativelanguage.googleapis.com/v1beta/models?key=' . urlencode( $sanitized['api_key'] );
-                $response = wp_remote_get( $url, array( 'timeout' => 15 ) );
-                
-                if ( is_wp_error( $response ) || wp_remote_retrieve_response_code( $response ) !== 200 ) {
-                    add_settings_error( 'altgenix_setting_group', 'invalid_api_key', 'Verification Failed! Invalid API Key. Reverted to Original Filename mode.', 'error' );
-                    $sanitized['mode'] = 'fallback';
-                } else {
-                    $body = json_decode( wp_remote_retrieve_body( $response ), true );
-                    $valid_models = array();
-                    
-                    if ( isset( $body['models'] ) && is_array( $body['models'] ) ) {
-                        foreach ( $body['models'] as $model ) {
-                            if ( isset( $model['supportedGenerationMethods'] ) && in_array( 'generateContent', $model['supportedGenerationMethods'] ) ) {
-                                $model_id = str_replace( 'models/', '', $model['name'] );
-                                $model_id_lower = strtolower( $model_id );
-                                $is_valid = (bool) preg_match( '/^gemini-(1\.5|2\.0|2\.5|3\.0|3)-(flash|pro)/i', $model_id_lower );
-                                $is_not_audio = ( strpos( $model_id_lower, 'tts' ) === false && strpos( $model_id_lower, 'audio' ) === false && strpos( $model_id_lower, 'embedding' ) === false );
+                update_option( 'altgenix_valid_models', array() );
+                $result = ALTGENIX_API::verify_key( $sanitized['provider'], $sanitized['api_key'] );
 
-                                if ( $is_valid && $is_not_audio ) { $valid_models[] = $model_id; }
-                            }
-                        }
-                    }
-                    
-                    if ( !empty( $valid_models ) ) {
-                        update_option( 'altgenix_valid_models', $valid_models ); 
-                        add_settings_error( 'altgenix_setting_group', 'valid_api_key', 'API Verified! ' . count($valid_models) . ' Vision Models auto-discovered.', 'success' );
-                    } else {
-                        add_settings_error( 'altgenix_setting_group', 'no_models', 'No compatible AI models found for this key. Reverted to Original Filename mode.', 'error' );
-                        $sanitized['mode'] = 'fallback';
-                    }
+                if ( ! empty( $result['valid'] ) ) {
+                    update_option( 'altgenix_valid_models', $result['models'] );
+                    add_settings_error( 'altgenix_setting_group', 'valid_api_key', $result['message'], 'success' );
+                } else {
+                    // Don't persist a key that failed verification — clear it so the field
+                    // isn't stuck showing a non-working key after the page reloads.
+                    $sanitized['api_key'] = '';
+                    add_settings_error( 'altgenix_setting_group', 'invalid_api_key', $result['message'], 'error' );
+                    $sanitized['mode'] = 'fallback';
                 }
             }
+        } else {
+            // Not in AI mode — any discovered models are irrelevant, so clear them.
+            update_option( 'altgenix_valid_models', array() );
         }
         return $sanitized;
     }
 
     public function enqueue_admin_scripts( $hook ) {
-        if ( strpos( $hook, 'altgenix' ) === false && $hook !== 'upload.php' && $hook !== 'post.php' ) return;
+        $upload_hooks = array( 'upload.php', 'media-new.php', 'post.php', 'post-new.php' );
+        if ( strpos( $hook, 'altgenix' ) === false && ! in_array( $hook, $upload_hooks, true ) ) return;
         
         wp_enqueue_style( 'altgenix-select2-css', ALTGENIX_PLUGIN_URL . 'assets/css/select2.min.css', array(), '4.1.0' );
         wp_enqueue_script( 'altgenix-select2-js', ALTGENIX_PLUGIN_URL . 'assets/js/select2.min.js', array('jquery'), '4.1.0', true );
@@ -120,6 +125,7 @@ class ALTGENIX_Settings {
 
     public function submit_feedback() {
         check_ajax_referer( 'altgenix_ajax_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) { wp_send_json_error( array( 'message' => 'Unauthorized Access' ) ); }
         $feedback = isset( $_POST['feedback'] ) ? sanitize_textarea_field( wp_unslash( $_POST['feedback'] ) ) : '';
         $rating = isset( $_POST['rating'] ) ? intval( wp_unslash( $_POST['rating'] ) ) : 0;
         
@@ -175,6 +181,8 @@ class ALTGENIX_Settings {
         $api_key = isset( $options['api_key'] ) ? $options['api_key'] : '';
         $mode = isset( $options['mode'] ) ? $options['mode'] : 'fallback';
         $custom_prompt = isset( $options['custom_prompt'] ) ? $options['custom_prompt'] : '';
+        $language = isset( $options['language'] ) ? $options['language'] : 'auto';
+        $provider = isset( $options['provider'] ) && in_array( $options['provider'], ALTGENIX_API::supported_providers(), true ) ? $options['provider'] : 'gemini';
         
         $gen_alt = isset( $options['gen_alt'] ) ? $options['gen_alt'] : 1;
         $gen_title = isset( $options['gen_title'] ) ? $options['gen_title'] : 1;
@@ -213,22 +221,45 @@ class ALTGENIX_Settings {
                             <p class="description">Select how you want to generate tags. "Original Filename" converts your file name (e.g. red-car.jpg) into text.</p>
                         </div>
 
+                        <div class="altgenix-form-row" id="altgenix_provider_row" <?php if($mode === 'fallback') echo 'style="display:none;"'; ?>>
+                            <label>AI Provider</label>
+                            <select name="altgenix_settings[provider]" id="altgenix_provider" class="altgenix-select2" style="width: 100%; max-width: 400px;">
+                                <?php foreach ( ALTGENIX_API::provider_labels() as $prov_key => $prov_label ) {
+                                    echo '<option value="' . esc_attr( $prov_key ) . '" ' . selected( $provider, $prov_key, false ) . '>' . esc_html( $prov_label ) . '</option>';
+                                } ?>
+                            </select>
+                            <p class="description">Choose which AI engine analyzes your images. Each provider needs its own API key — switching providers re-verifies with the key entered below.</p>
+                        </div>
+
                         <div class="altgenix-form-row" id="altgenix_api_row" <?php if($mode === 'fallback') echo 'style="display:none;"'; ?>>
-                            <label>API Key (Google AI Studio)</label>
+                            <label>API Key</label>
                             <div class="altgenix-input-wrapper" style="max-width: 400px;">
-                                <input type="password" id="altgenix_api_key" name="altgenix_settings[api_key]" value="<?php echo esc_attr( $api_key ); ?>" placeholder="AIzaSy..." <?php echo $is_api_verified ? 'readonly="readonly"' : ''; ?> />
+                                <input type="password" id="altgenix_api_key" name="altgenix_settings[api_key]" value="<?php echo esc_attr( $api_key ); ?>" placeholder="Enter your API key..." <?php echo $is_api_verified ? 'readonly="readonly"' : ''; ?> />
                                 <button type="button" class="altgenix-action-btn altgenix-toggle-eye" data-target="altgenix_api_key" title="Show/Hide"><span class="dashicons dashicons-visibility"></span></button>
                                 <?php if($is_api_verified): ?>
                                     <button type="button" class="altgenix-action-btn altgenix-edit-btn" data-target="altgenix_api_key" title="Edit Key"><span class="dashicons dashicons-edit"></span></button>
                                 <?php endif; ?>
                             </div>
                             <p class="description" style="margin-top: 5px;">
-                                <span class="dashicons dashicons-info-outline" style="font-size: 16px; margin-top:2px;"></span> 
-                                Don't have an API key? <a href="https://aistudio.google.com/app/apikey" target="_blank" style="text-decoration: none; font-weight: 500;">Get your free API key here</a>.
+                                <span class="dashicons dashicons-info-outline" style="font-size: 16px; margin-top:2px;"></span>
+                                Don't have an API key? <a href="https://aistudio.google.com/app/apikey" id="altgenix_key_help_link" target="_blank" style="text-decoration: none; font-weight: 500;">Get your API key here</a>.
                             </p>
                             <?php if(!empty($valid_models)): ?>
                             <p style="font-size: 12px; color: #059669; margin-top: 5px;"><strong>Active Models:</strong> <?php echo esc_html( implode(', ', $valid_models) ); ?></p>
                             <?php endif; ?>
+                        </div>
+
+                        <div class="altgenix-form-row" id="altgenix_lang_row" <?php if($mode === 'fallback') echo 'style="display:none;"'; ?>>
+                            <label>Output Language</label>
+                            <select name="altgenix_settings[language]" id="altgenix_language" class="altgenix-lang-select" style="width: 100%; max-width: 400px;">
+                                <option value="auto" <?php selected($language, 'auto'); ?>>Auto-detect (Site Language)</option>
+                                <?php foreach ( ALTGENIX_API::supported_languages() as $lang_code => $lang_name ) {
+                                    echo '<option value="' . esc_attr( $lang_code ) . '" ' . selected( $language, $lang_code, false ) . '>' . esc_html( $lang_name ) . '</option>';
+                                } ?>
+                            </select>
+                            <p class="description" style="margin-top: 5px;">
+                                Language used for the generated Alt Text, Title, Caption &amp; Description. <strong>Auto-detect</strong> follows your WordPress site language (e.g. a Portuguese site gets Portuguese text).
+                            </p>
                         </div>
                     </div>
                 </div>

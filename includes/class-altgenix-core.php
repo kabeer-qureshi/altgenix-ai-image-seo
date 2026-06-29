@@ -10,19 +10,78 @@ class ALTGENIX_Core {
         add_action( 'wp_ajax_altgenix_get_pending', array( $this, 'ajax_get_pending' ) );
         add_action( 'wp_ajax_altgenix_process_image', array( $this, 'ajax_process_image' ) );
         add_action( 'wp_ajax_altgenix_mark_all_processed', array( $this, 'ajax_mark_all_processed' ) );
+
+        // Instant in-browser auto-processing of fresh uploads (no WP-Cron wait).
+        add_action( 'wp_ajax_altgenix_get_auto_queue', array( $this, 'ajax_get_auto_queue' ) );
+        add_action( 'wp_ajax_altgenix_process_auto', array( $this, 'ajax_process_auto' ) );
     }
 
     /**
-     * Schedule background processing for a newly uploaded image attachment.
+     * Queue a newly uploaded image for processing.
      *
-     * M-01 FIX: Added wp_rand() offset to prevent WordPress cron event deduplication
-     * when multiple images are uploaded simultaneously (e.g., drag-and-drop).
+     * The upload request itself does NO API work — it only flags the attachment.
+     * The in-browser auto-processor (running on Media/editor pages) then picks it
+     * up within seconds, so generation no longer waits for a WP-Cron page reload
+     * and the upload stays fast. A WP-Cron event is also scheduled as a fallback
+     * for uploads made with no admin page open (e.g. a WooCommerce import).
      *
      * @param int $attachment_id The attachment post ID.
      */
     public function schedule_background_processing( $attachment_id ) {
         if ( ! wp_attachment_is_image( $attachment_id ) ) return;
-        wp_schedule_single_event( time() + wp_rand( 1, 5 ), 'altgenix_background_process_image', array( $attachment_id ) );
+
+        update_post_meta( $attachment_id, '_altgenix_auto', '1' );
+
+        if ( ! wp_next_scheduled( 'altgenix_background_process_image', array( $attachment_id ) ) ) {
+            wp_schedule_single_event( time() + wp_rand( 1, 5 ), 'altgenix_background_process_image', array( $attachment_id ) );
+        }
+    }
+
+    /**
+     * AJAX handler: return a small batch of freshly-uploaded images awaiting
+     * auto-processing. Only attachments flagged on upload ('_altgenix_auto') are
+     * returned, so the existing media library is never auto-processed in bulk.
+     */
+    public function ajax_get_auto_queue() {
+        check_ajax_referer( 'altgenix_ajax_nonce', 'nonce' );
+        if ( ! current_user_can( 'upload_files' ) ) { wp_send_json_error( 'Unauthorized Access' ); }
+
+        $supported_mimes = array( 'image/jpeg', 'image/png', 'image/webp' );
+
+        // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query
+        $args = array(
+            'post_type'      => 'attachment',
+            'post_status'    => 'inherit',
+            'post_mime_type' => $supported_mimes,
+            'posts_per_page' => 5,
+            'fields'         => 'ids',
+            'meta_query'     => array(
+                'relation' => 'AND',
+                array( 'key' => '_altgenix_auto', 'value' => '1' ),
+                array( 'key' => '_altgenix_processed', 'compare' => 'NOT EXISTS' ),
+            ),
+        );
+
+        $query = new WP_Query( $args );
+        wp_send_json_success( array_map( 'intval', $query->posts ) );
+    }
+
+    /**
+     * AJAX handler: process one freshly-uploaded image (treated as a new upload,
+     * so physical file renaming applies just like the cron path would).
+     */
+    public function ajax_process_auto() {
+        check_ajax_referer( 'altgenix_ajax_nonce', 'nonce' );
+        if ( ! current_user_can( 'upload_files' ) ) { wp_send_json_error( 'Unauthorized Access' ); }
+
+        $image_id = isset( $_POST['image_id'] ) ? intval( $_POST['image_id'] ) : 0;
+
+        if ( $image_id && get_post_type( $image_id ) === 'attachment' && wp_attachment_is_image( $image_id ) ) {
+            $this->process_new_attachment( $image_id, false );
+            wp_send_json_success();
+        } else {
+            wp_send_json_error( array( 'message' => 'Invalid or non-image attachment ID.' ) );
+        }
     }
 
     /**
@@ -155,9 +214,32 @@ class ALTGENIX_Core {
      */
     public function process_new_attachment( $attachment_id, $is_bulk = false ) {
         if ( ! wp_attachment_is_image( $attachment_id ) ) return;
-        
-        if ( get_post_meta( $attachment_id, '_altgenix_processed', true ) && !$is_bulk ) return;
 
+        if ( get_post_meta( $attachment_id, '_altgenix_processed', true ) && ! $is_bulk ) return;
+
+        // Concurrency guard: the cron fallback and the in-browser auto-processor can both
+        // target the same image — the lock ensures only one runs (no duplicate API call).
+        $lock_key = 'altgenix_lock_' . (int) $attachment_id;
+        if ( get_transient( $lock_key ) ) return;
+        set_transient( $lock_key, 1, 2 * MINUTE_IN_SECONDS );
+
+        try {
+            $this->run_processing( $attachment_id, $is_bulk );
+        } finally {
+            delete_transient( $lock_key );
+            // Clear the auto-queue flag so a processed (or hard-failed) image isn't re-queued.
+            delete_post_meta( $attachment_id, '_altgenix_auto' );
+        }
+    }
+
+    /**
+     * Generate metadata for one attachment via AI or filename fallback.
+     * Always invoked through process_new_attachment() so the concurrency lock applies.
+     *
+     * @param int  $attachment_id The attachment post ID.
+     * @param bool $is_bulk       Whether this is a bulk/re-processing operation.
+     */
+    private function run_processing( $attachment_id, $is_bulk ) {
         $options = get_option( 'altgenix_settings', array() );
         $mode = isset( $options['mode'] ) ? $options['mode'] : 'fallback';
         $gen_alt = !empty( $options['gen_alt'] );
