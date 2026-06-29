@@ -1,14 +1,14 @@
 === AltGenix AI Image SEO ===
 Contributors: abdulkabeerdeveloper2530
-Tags: auto alt text, seo, image optimization, auto tagger, gemini ai
+Tags: auto alt text, seo, image optimization, openai, claude
 Requires at least: 5.8
 Tested up to: 6.9
 Requires PHP: 7.4
-Stable tag: 1.0.1
+Stable tag: 1.1.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-AltGenix AI Image SEO automatically generates highly optimized SEO Alt Text and renames physical image files using Google Gemini AI.
+AltGenix auto-generates SEO alt text & renames image files using Google Gemini, OpenAI GPT-4o, or Anthropic Claude — with smart AI fallback.
 
 == Description ==
 
@@ -19,6 +19,8 @@ Stop wasting hours writing alt text and renaming image files manually. Our plugi
 Unlike other plugins, it comes with a **Smart Fallback Engine**. It dynamically discovers available AI models (like Gemini 3 Flash, Gemini 2.5, Gemma, and Robotics), and if one model reaches its free limit, it seamlessly routes the request to the next available model without interrupting your workflow.
 
 ### 🚀 Key Features:
+* **Choose Your AI Engine:** Works with Google Gemini, OpenAI (GPT-4o / GPT-4o-mini), or Anthropic Claude (Opus, Sonnet, Haiku). Bring your own API key for any provider.
+* **Multilingual Output:** Generates Alt Text, Titles, Captions & Descriptions in your site's language automatically, or pick any of 30+ languages manually (Portuguese, Spanish, French, German, Arabic, Japanese, and more).
 * **Smart Alt Text Generation:** Analyzes image context and writes perfect, keyword-rich alt texts.
 * **Physical File Renaming:** Automatically renames physical image files (e.g., `IMG_123.jpg` to `glossy-red-car.jpg`) including all generated thumbnails!
 * **Zero Configuration API Setup:** Just enter your Google AI Studio API key, and the plugin auto-discovers and verifies all available Vision models.
@@ -58,6 +60,23 @@ Absolutely. AltGenix AI Image SEO is built with strict WordPress security standa
 3. **Smart Fallback API:** Showing the auto-discovery of multiple Gemini and Gemma models.
 
 == Changelog ==
+
+= 1.1.0 =
+* New: Multi-provider support — choose Google Gemini, OpenAI (GPT-4o), or Anthropic Claude as your image analysis engine, each with its own API key.
+* New: AI Provider selector in Settings, with per-provider key validation and "get your key" links.
+* Improvement: Per-provider model fallback — if one model is rate-limited, the plugin automatically tries the next.
+* Improvement: New uploads are now auto-tagged within seconds while you stay on the page, instead of waiting for a WordPress cron page reload. The upload request no longer performs any AI work, so uploads are noticeably faster.
+* Improvement: Clearer verification errors — the plugin now tells you the real reason a key was rejected (e.g. an invalid key vs. a server SSL/network problem vs. Google Gemini being unavailable in your region), instead of always saying "Invalid API Key".
+* Fix: Added a concurrency lock so a single image is never processed (and billed) twice when the background processor and cron fallback overlap.
+* Fix: A key that fails verification is no longer saved — the field is cleared so it can't get stuck showing a non-working key.
+* Fix: Switching the AI Provider now clears the key field so a previous provider's key never carries over.
+* Fix: OpenAI/Claude key verification now performs a real generation check, so a key with no credits/quota is caught upfront (with an "add billing/credits" message) instead of appearing active and silently falling back to filename mode.
+
+= 1.0.2 =
+* New: Multilingual output — generated text now matches your site language automatically (Auto-detect), with a manual picker for 30+ languages.
+* Fix: The "Custom Prompt Context" advanced setting is now actually sent to the AI (it was previously saved but ignored).
+* Improvement: Saving settings no longer re-verifies the API key on every save. It only re-checks when the key changes, so a brief network hiccup can no longer silently revert a working AI configuration to fallback mode.
+* Hardening: Added a capability check to the feedback handler and a guard against corrupted model data.
 
 = 1.0.1 =
 * Minor bug fixes and complete rebranding implementation.
