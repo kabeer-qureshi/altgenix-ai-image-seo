@@ -4,7 +4,7 @@ Tags: auto alt text, seo, image optimization, openai, claude
 Requires at least: 5.8
 Tested up to: 6.9
 Requires PHP: 7.4
-Stable tag: 1.1.0
+Stable tag: 1.1.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -60,6 +60,13 @@ Absolutely. AltGenix AI Image SEO is built with strict WordPress security standa
 3. **Smart Fallback API:** Showing the auto-discovery of multiple Gemini and Gemma models.
 
 == Changelog ==
+
+= 1.1.1 =
+* Improvement: Custom Prompt Context is now treated as high-priority instructions the AI must follow, so your brand name, tone, or focus is reliably reflected in the generated Alt Text and other fields.
+* Improvement: Alt Text is now grounded strictly in what is visible in the image — the AI is instructed not to invent brands, names, or details it cannot see, producing more accurate results.
+* Improvement: Default Alt Text length is now "Medium (5-15 words)" instead of "Short", giving more descriptive, SEO-friendly alt text out of the box (existing saved settings are unchanged).
+* Improvement: Lower generation temperature for OpenAI and Claude keeps descriptions faithful to the image instead of overly "creative".
+* Fix: Gemini responses are now requested as strict JSON, reducing occasional "Invalid JSON" failures that left an image without generated tags.
 
 = 1.1.0 =
 * New: Multi-provider support — choose Google Gemini, OpenAI (GPT-4o), or Anthropic Claude as your image analysis engine, each with its own API key.
