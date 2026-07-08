@@ -86,11 +86,15 @@ jQuery(document).ready(function($) {
             $('#altgenix_api_row').slideUp();
             $('#altgenix_lang_row').slideUp();
             $('.altgenix-length-col').fadeOut();
+            $('.altgenix-ai-only-row').slideUp();
+            $('#altgenix_prompt_fallback_warning').slideDown();
         } else {
             $('#altgenix_provider_row').slideDown();
             $('#altgenix_api_row').slideDown();
             $('#altgenix_lang_row').slideDown();
             $('.altgenix-length-col').fadeIn();
+            $('.altgenix-ai-only-row').slideDown();
+            $('#altgenix_prompt_fallback_warning').slideUp();
         }
     });
 
