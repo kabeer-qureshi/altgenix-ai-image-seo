@@ -46,7 +46,7 @@ class ALTGENIX_Settings {
 
         $allowed_lengths = array( 'short', 'medium', 'long' );
         $length_defaults = array(
-            'alt_length'     => 'short',
+            'alt_length'     => 'medium',
             'title_length'   => 'short',
             'caption_length' => 'short',
             'desc_length'    => 'medium',
@@ -280,7 +280,7 @@ class ALTGENIX_Settings {
                                     <td><label class="altgenix-switch"><input type="checkbox" name="altgenix_settings[gen_alt]" value="1" <?php checked(1, $gen_alt); ?>><span class="altgenix-slider"></span></label></td>
                                     <td class="altgenix-length-col" <?php if($mode === 'fallback') echo 'style="display:none;"'; ?>>
                                         <select name="altgenix_settings[alt_length]" class="altgenix-select2">
-                                            <?php foreach($lengths as $val => $label) { echo '<option value="'.esc_attr($val).'" '.selected(isset($options['alt_length'])?$options['alt_length']:'short', $val, false).'>'.esc_html($label).'</option>'; } ?>
+                                            <?php foreach($lengths as $val => $label) { echo '<option value="'.esc_attr($val).'" '.selected(isset($options['alt_length'])?$options['alt_length']:'medium', $val, false).'>'.esc_html($label).'</option>'; } ?>
                                         </select>
                                     </td>
                                 </tr>
@@ -323,6 +323,12 @@ class ALTGENIX_Settings {
                             <label>Custom Prompt Context</label>
                             <textarea name="altgenix_settings[custom_prompt]" class="regular-text" rows="4" style="width: 100%; max-width: 600px;" placeholder="E.g., Keep it professional. Use brand name 'Acme Corp'. Focus on e-commerce aspects."><?php echo esc_textarea( $custom_prompt ); ?></textarea>
                             <p class="description">Add extra instructions for the AI to follow when generating text. (AI Mode only)</p>
+                            <div id="altgenix_prompt_fallback_warning" style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 10px 14px; margin-top: 10px; border-radius: 4px; <?php if ( $mode !== 'fallback' ) echo 'display:none;'; ?>">
+                                <p style="margin: 0; color: #856404; font-size: 13px;"><strong>⚠️ Custom Prompt is inactive.</strong> You are currently in <strong>Original Filename</strong> mode — the AI is not being called, so this prompt has no effect. Switch to <strong>AI Smart Generator</strong> mode in the General tab for this to work.</p>
+                            </div>
+                            <div style="background: #e8f4fd; border-left: 4px solid #0288d1; padding: 10px 14px; margin-top: 10px; border-radius: 4px; <?php if ( $mode === 'fallback' ) echo 'display:none;'; ?>" class="altgenix-ai-only-row">
+                                <p style="margin: 0; color: #01579b; font-size: 13px;">💡 <strong>Tip:</strong> If your custom prompt asks for specific details (brand names, product categories, etc.), set the field lengths to <strong>Medium</strong> or <strong>Long</strong> in the Generation Control tab — <em>Short (1-5 words)</em> may be too restrictive for the AI to follow your instructions.</p>
+                            </div>
                         </div>
                     </div>
                 </div>

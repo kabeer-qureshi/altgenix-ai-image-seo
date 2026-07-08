@@ -240,9 +240,16 @@ class ALTGENIX_API {
         ========================
         */
 
-        $prompt  = "Act as an expert SEO copywriter.\n";
-        $prompt .= "Analyze this image and STRICTLY return a JSON object.\n";
+        $prompt  = "You are an expert SEO copywriter and web accessibility specialist.\n";
+        $prompt .= "Carefully look at the provided image and describe what is ACTUALLY visible in it.\n";
+        $prompt .= "Base every field ONLY on what you can clearly see. Do NOT invent brand names, people, places, prices or details that are not visible.\n";
         $prompt .= "Return ONLY valid JSON. No markdown. No extra text.\n\n";
+
+        // Apply the user's custom prompt EARLY so the AI treats it as a primary instruction
+        // rather than a low-priority afterthought appended at the end.
+        if ( ! empty( $options['custom_prompt'] ) ) {
+            $prompt .= "CRITICAL — You MUST follow these specific instructions when writing ALL text values: " . trim( $options['custom_prompt'] ) . "\n\n";
+        }
 
         $lengths_map = array(
             'short'  => '1 to 5 words',
@@ -253,9 +260,11 @@ class ALTGENIX_API {
         // C-07 FIX: Validate length values against whitelist before using as array key.
         $valid_lengths = array_keys( $lengths_map );
 
+        $prompt .= "The JSON object must contain these fields:\n";
+
         if ( ! empty( $options['gen_alt'] ) ) {
-            $alt_len_key = isset( $options['alt_length'] ) && in_array( $options['alt_length'], $valid_lengths, true ) ? $options['alt_length'] : 'short';
-            $prompt .= "- \"alt\": Highly descriptive alt text ({$lengths_map[$alt_len_key]})\n";
+            $alt_len_key = isset( $options['alt_length'] ) && in_array( $options['alt_length'], $valid_lengths, true ) ? $options['alt_length'] : 'medium';
+            $prompt .= "- \"alt\": Descriptive, accessibility-friendly alt text stating the main subject and important context actually shown in the image ({$lengths_map[$alt_len_key]})\n";
         }
 
         if ( ! empty( $options['gen_title'] ) ) {
@@ -278,11 +287,6 @@ class ALTGENIX_API {
         $language = $this->resolve_output_language( $options );
         $prompt  .= "\nIMPORTANT: Write the VALUES of every field in {$language}.\n";
         $prompt  .= "Do NOT translate or rename the JSON keys (alt, title, caption, description) — the keys must stay in English.\n";
-
-        // Apply the user's optional custom prompt context (sanitized on save).
-        if ( ! empty( $options['custom_prompt'] ) ) {
-            $prompt .= "\nAdditional instructions: " . trim( $options['custom_prompt'] ) . "\n";
-        }
 
         // Dispatch to the configured provider. Each sender loops over $this->models
         // and returns array( 'success' => true, 'text' => ... ) or a WP_Error.
@@ -322,7 +326,12 @@ class ALTGENIX_API {
                     ),
                 ),
             ),
-            'generationConfig' => array( 'temperature' => 0.4 ),
+            // Low temperature keeps the description faithful to the image (less drift/hallucination);
+            // responseMimeType forces the model to emit parseable JSON, avoiding "Invalid JSON" failures.
+            'generationConfig' => array(
+                'temperature'      => 0.4,
+                'responseMimeType' => 'application/json',
+            ),
         );
 
         $args = array(
@@ -411,6 +420,8 @@ class ALTGENIX_API {
             $payload = array(
                 'model'           => $model_id,
                 'max_tokens'      => 1024,
+                // Low temperature keeps alt text faithful to the image instead of "creative".
+                'temperature'     => 0.3,
                 'response_format' => array( 'type' => 'json_object' ),
                 'messages'        => array(
                     array(
@@ -490,6 +501,8 @@ class ALTGENIX_API {
             $payload = array(
                 'model'      => $model_id,
                 'max_tokens' => 1024,
+                // Low temperature keeps alt text faithful to the image instead of "creative".
+                'temperature' => 0.4,
                 'messages'   => array(
                     array(
                         'role'    => 'user',
