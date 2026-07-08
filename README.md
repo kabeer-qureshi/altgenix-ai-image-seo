@@ -8,7 +8,7 @@ Stable tag: 1.1.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-AltGenix AI Image SEO automatically generates highly optimized SEO Alt Text and renames physical image files using your choice of Google Gemini, OpenAI (GPT-4o), or Anthropic Claude.
+Auto-generate SEO-optimized Alt Text, Titles, Captions and rename image files using Google Gemini, OpenAI, or Anthropic Claude AI.
 
 == Description ==
 
