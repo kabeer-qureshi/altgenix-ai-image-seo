@@ -6,13 +6,16 @@
 .altgenix-card { background: #fff; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.03); padding: 30px; margin-bottom: 30px; border: 1px solid #f0f0f0; }
 
 /* Forms */
-.altgenix-form-row { margin-bottom: 20px; }
+.altgenix-form-row { margin: 0; padding-bottom: 22px; }
+.altgenix-form-row + .altgenix-form-row { border-top: 1px solid #f1f3f5; padding-top: 22px; }
 .altgenix-input-group label { display: block; font-weight: 600; margin-bottom: 8px; color: #495057; }
 .altgenix-input-group input, .altgenix-input-group textarea { width: 100%; padding: 12px 15px; border: 1px solid #ced4da; border-radius: 8px; font-size: 14px; background: #f8f9fa; transition: border-color 0.3s; }
 .altgenix-input-group input:focus, .altgenix-input-group textarea:focus { border-color: #6366f1; outline: none; box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1); }
 
 /* Buttons */
-.altgenix-form-actions { display: flex; justify-content: flex-end; margin-bottom: 50px; }
+/* The save bar rides the bottom of the viewport rather than sitting at the end of
+   a long form, so Save is reachable from any tab without scrolling to find it. */
+.altgenix-form-actions { position: sticky; bottom: 0; z-index: 20; display: flex; justify-content: flex-end; align-items: center; gap: 14px; margin: 0; padding: 14px 0; background: rgba(248, 249, 250, 0.94); backdrop-filter: blur(6px); border-top: 1px solid #e6e8eb; }
 .altgenix-btn-primary { background: #6366f1; color: white; border: none; padding: 10px 24px; border-radius: 8px; font-size: 15px; cursor: pointer; font-weight: 500; transition: 0.3s; }
 .altgenix-btn-primary:hover { background: #4f46e5; transform: translateY(-1px); }
 .altgenix-btn-secondary { background: #e0e7ff; color: #4f46e5; border: none; padding: 8px 16px; border-radius: 8px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 5px; }
@@ -37,16 +40,129 @@
 /* Actions */
 .altgenix-action-icon { background: transparent; border: none; color: #adb5bd; cursor: pointer; margin-right: 5px; text-decoration: none;}
 .altgenix-action-icon:hover { color: #dc2626; }
+.altgenix-action-icon.altgenix-rename-btn:hover { color: #f59e0b; }
+
 .altgenix-regenerate-btn { color: #6366f1 !important; }
 .altgenix-regenerate-btn:hover { color: #4f46e5 !important; background: #e0e7ff; border-radius: 4px; }
+.altgenix-rename-btn { color: #f59e0b !important; }
+.altgenix-rename-btn:hover { color: #d97706 !important; background: #fef3c7; border-radius: 4px; }
 
-/* Select2 Overrides */
-.select2-container--default .select2-selection--single { background-color: #f8f9fa; border: 1px solid #ced4da; border-radius: 8px; height: 38px; display: flex; align-items: center; }
-.select2-container--default .select2-selection--single:focus, .select2-container--open .select2-selection--single { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1); outline: none; }
-.select2-container--default .select2-selection--single .select2-selection__rendered { color: #495057; font-size: 14px; font-weight: 500; }
-.select2-container--default .select2-selection--single .select2-selection__arrow { height: 36px; }
-.select2-dropdown { border-color: #ced4da; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
-.select2-container--default .select2-results__option--highlighted[aria-selected] { background-color: #6366f1 !important; }
+/* Custom Button Dropdown */
+.altgenix-select-native {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+    clip-path: inset(50%) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+.altgenix-custom-select {
+    position: relative;
+    width: 100%;
+}
+.altgenix-select-btn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    background-color: #ffffff;
+    border: 1px solid #ced4da;
+    border-radius: 10px;
+    height: 44px;
+    padding: 0 16px;
+    font-size: 14.5px;
+    font-weight: 500;
+    color: #334155;
+    cursor: pointer;
+    box-sizing: border-box;
+    transition: all 0.2s ease;
+    text-align: left;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+}
+.altgenix-select-btn:hover {
+    border-color: #cbd5e1;
+    background-color: #f8fafc;
+}
+.altgenix-select-btn:focus, .altgenix-custom-select.open .altgenix-select-btn {
+    border-color: #6366f1;
+    box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.12);
+    outline: none;
+    background-color: #ffffff;
+}
+.altgenix-select-btn span {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.altgenix-select-btn svg {
+    width: 18px;
+    height: 18px;
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    color: #94a3b8;
+}
+.altgenix-custom-select.open .altgenix-select-btn svg {
+    transform: rotate(180deg);
+}
+.altgenix-select-menu {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    width: 100%;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.05);
+    margin: 0;
+    padding: 6px;
+    list-style: none;
+    max-height: 280px;
+    overflow-y: auto;
+    z-index: 9999;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-8px) scale(0.98);
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    box-sizing: border-box;
+}
+.altgenix-custom-select.open .altgenix-select-menu {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0) scale(1);
+}
+.altgenix-select-option {
+    padding: 10px 14px;
+    font-size: 14px;
+    color: #334155;
+    cursor: pointer;
+    border-radius: 8px;
+    transition: background 0.15s, color 0.15s;
+    margin-bottom: 2px;
+}
+.altgenix-select-option:last-child {
+    margin-bottom: 0;
+}
+.altgenix-select-option:hover,
+.altgenix-select-option:focus {
+    background: #f1f5f9;
+    color: #0f172a;
+    outline: none;
+}
+.altgenix-select-option.disabled {
+    opacity: 0.48;
+    cursor: not-allowed;
+}
+.altgenix-select-option.selected {
+    background: #eef2ff;
+    color: #4f46e5;
+    font-weight: 600;
+}
 
 /* Pagination */
 .altgenix-pagination { margin-top: 20px; display: flex; justify-content: flex-end; gap: 5px; }
@@ -55,11 +171,15 @@
 .altgenix-pagination a:hover { background: #f8f9fa; border-color: #ced4da; }
 
 /* Animations */
-.altgenix-spin { animation: altgenix-spin 1.5s linear infinite; }
+.altgenix-spin::before { 
+    animation: altgenix-spin 1.5s linear infinite; 
+    display: inline-block;
+    transform-origin: center center;
+}
 @keyframes altgenix-spin { 100% { transform: rotate(360deg); } }
 
 /* Premium Modal Overlay & Box */
-.altgenix-modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 99999; opacity: 0; visibility: hidden; transition: all 0.3s ease; }
+.altgenix-modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 1000000; opacity: 0; visibility: hidden; transition: all 0.3s ease; }
 .altgenix-modal-overlay.show { opacity: 1; visibility: visible; }
 .altgenix-modal-box { background: #fff; width: 400px; padding: 30px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); transform: translateY(20px); transition: all 0.3s ease; }
 .altgenix-modal-overlay.show .altgenix-modal-box { transform: translateY(0); }
@@ -69,7 +189,7 @@
 .notice{margin-bottom: 30px;}
 
 /* Custom Input Wrappers & Readonly UI */
-.altgenix-form-row label { display: block; font-weight: 600; margin-bottom: 8px; color: #495057; }
+.altgenix-form-row > label:not(.altgenix-switch) { display: block; font-weight: 600; font-size: 13px; letter-spacing: .01em; margin: 0 0 10px; color: #1d2327; }
 .altgenix-input-wrapper { position: relative; display: flex; align-items: center; width: 100%; }
 .altgenix-input-wrapper input, .altgenix-input-wrapper textarea { width: 100%; padding: 12px 15px; border: 1px solid #ced4da; border-radius: 8px; font-size: 14px; background: #fff; transition: border-color 0.3s; padding-right: 80px; }
 .altgenix-input-wrapper input:focus, .altgenix-input-wrapper textarea:focus { border-color: #6366f1; outline: none; box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1); }
@@ -78,6 +198,39 @@
 .altgenix-toggle-eye { right: 40px; }
 .altgenix-action-btn:hover { color: #6366f1; }
 .altgenix-textarea-edit { top: 10px; }
+.altgenix-input-wrapper input.altgenix-api-key-saved[readonly] {
+    background: #f8fffb;
+    border-color: #a7f3d0;
+    cursor: default;
+}
+.altgenix-input-wrapper input.altgenix-api-key-saved::placeholder {
+    color: #64748b;
+    opacity: 1;
+    letter-spacing: 0.16em;
+    font-weight: 600;
+}
+.altgenix-api-key-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 9px 0 0;
+    padding: 5px 9px;
+    border-radius: 999px;
+    background: #ecfdf5;
+    color: #047857;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.35;
+}
+.altgenix-api-key-status .dashicons {
+    width: 15px;
+    height: 15px;
+    font-size: 15px;
+}
+.altgenix-api-key-status.pending-removal {
+    background: #fff7ed;
+    color: #c2410c;
+}
 
 /* Custom iOS style Toggles */
 .altgenix-control-table th { font-weight: 600; color: #495057; vertical-align: middle; }
@@ -113,3 +266,539 @@
 .altgenix-star-rating span:hover { transform: scale(1.1); }
 .altgenix-star-rating span.active, .altgenix-star-rating span.hover { color: #fbbf24; }
 .dashicons-star-filled:before { content: "\f155"; }
+/* Work-with-the-developer card (plugin screens only) */
+.altgenix-services { border: 1px solid #e0e7ff; }
+.altgenix-services h3 { color: #4f46e5; }
+.altgenix-services-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 20px; margin: 0 0 18px; padding: 0; list-style: none; }
+.altgenix-services-list li { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #495057; }
+.altgenix-services-list .dashicons { color: #6366f1; font-size: 17px; width: 17px; height: 17px; flex: none; }
+.altgenix-services-offer { background: #f5f3ff; border-left: 3px solid #6366f1; border-radius: 6px; padding: 12px 15px; font-size: 13px; color: #495057; line-height: 1.7; }
+.altgenix-services-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.altgenix-services-actions a { text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
+.altgenix-services-actions .altgenix-btn-outline { color: #495057; background: #fff; }
+.altgenix-services-actions .altgenix-btn-outline:hover { border-color: #6366f1; color: #4f46e5; }
+.altgenix-services-wa { background: #25d366; }
+.altgenix-services-wa:hover { background: #1da851; }
+.altgenix-services-wa .dashicons { font-size: 17px; width: 17px; height: 17px; }
+.altgenix-services-meta { margin: 14px 0 0; font-size: 12px; }
+.altgenix-services-meta a { color: #4f46e5; text-decoration: none; }
+
+
+@media screen and (max-width: 782px) {
+    .altgenix-services-list { grid-template-columns: 1fr; }
+}
+
+/* Media Library service notice (media screens only, dismissed for good) */
+.altgenix-service-notice { border-left-color: #6366f1; padding: 4px 0; }
+.altgenix-service-notice-inner { display: flex; gap: 14px; align-items: flex-start; padding: 10px 12px 12px 4px; }
+.altgenix-service-notice-icon { flex: none; width: 38px; height: 38px; border-radius: 9px; background: #eef2ff; color: #6366f1; font-size: 20px; display: flex; align-items: center; justify-content: center; }
+.altgenix-service-notice-body { min-width: 0; }
+.altgenix-service-notice .altgenix-service-notice-title { margin: 2px 0 4px; font-size: 14px; font-weight: 600; color: #1d2327; }
+.altgenix-service-notice .altgenix-service-notice-text { margin: 0 0 10px; color: #50575e; }
+.altgenix-service-notice .altgenix-service-notice-actions { margin: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* Services banner across the top of the plugin's own screens */
+.altgenix-service-banner {
+    position: relative;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px;
+    align-items: center;
+    background: linear-gradient(135deg, #f5f3ff 0%, #eef2ff 50%, #e0e7ff 100%);
+    border: 1px solid #c7d2fe;
+    border-left: 5px solid #6366f1;
+    border-radius: 14px;
+    box-shadow: 0 4px 20px rgba(99, 102, 241, 0.08);
+    padding: 24px 50px 24px 24px;
+    margin-bottom: 30px;
+}
+.altgenix-service-banner-icon {
+    flex: none;
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    background: #6366f1;
+    color: #fff;
+    font-size: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
+}
+.altgenix-service-banner-body { flex: 1 1 320px; min-width: 0; }
+.altgenix-service-banner-title { margin: 0 0 6px; font-size: 16px; font-weight: 700; color: #1e1b4b; line-height: 1.4; }
+.altgenix-service-banner-text { margin: 0; font-size: 14px; color: #4338ca; line-height: 1.7; }
+.altgenix-service-banner-text strong { color: #312e81; }
+.altgenix-service-banner-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.altgenix-service-banner-actions a { text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
+.altgenix-service-banner-actions .altgenix-btn-outline { color: #495057; background: #fff; }
+.altgenix-service-banner-actions .altgenix-btn-outline:hover { border-color: #6366f1; color: #4f46e5; }
+
+/* Close / dismiss button */
+.altgenix-banner-dismiss {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    background: transparent;
+    border: none;
+    color: #a5b4fc;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 6px;
+    line-height: 0;
+    transition: all 0.2s ease;
+}
+.altgenix-banner-dismiss:hover {
+    background: rgba(99, 102, 241, 0.1);
+    color: #4f46e5;
+}
+.altgenix-banner-dismiss svg {
+    width: 18px;
+    height: 18px;
+}
+
+/* Primary call to action, given enough weight to be the obvious next click */
+.altgenix-btn-lg { padding: 12px 22px; font-size: 15px; font-weight: 600; box-shadow: 0 2px 8px rgba(37, 211, 102, 0.25); }
+.altgenix-service-banner-alt { font-size: 13px; color: #6366f1; text-decoration: none; font-weight: 500; }
+.altgenix-service-banner-alt:hover { color: #4f46e5; text-decoration: underline; }
+
+/* These button classes started life on <button> and are now used on <a> too.
+   WordPress admin colours every admin link on hover, focus and visit, which
+   repainted the label blue mid-hover, so each state is pinned explicitly here. */
+a.altgenix-btn-primary,
+a.altgenix-btn-primary:link,
+a.altgenix-btn-primary:visited,
+a.altgenix-btn-primary:hover,
+a.altgenix-btn-primary:focus,
+a.altgenix-btn-primary:active { color: #fff; text-decoration: none; }
+
+a.altgenix-btn-outline,
+a.altgenix-btn-outline:link,
+a.altgenix-btn-outline:visited { color: #495057; text-decoration: none; }
+a.altgenix-btn-outline:hover,
+a.altgenix-btn-outline:focus,
+a.altgenix-btn-outline:active { color: #4f46e5; text-decoration: none; }
+
+a.altgenix-btn-secondary,
+a.altgenix-btn-secondary:link,
+a.altgenix-btn-secondary:visited,
+a.altgenix-btn-secondary:hover,
+a.altgenix-btn-secondary:focus,
+a.altgenix-btn-secondary:active { color: #4f46e5; text-decoration: none; }
+
+/* Save bar state */
+.altgenix-save-state { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: #d97706; font-weight: 500; }
+.altgenix-save-state .dashicons { font-size: 16px; width: 16px; height: 16px; }
+.altgenix-form-actions[hidden], .altgenix-save-state[hidden] { display: none !important; }
+
+@media screen and (max-width: 782px) {
+    .altgenix-save-state { font-size: 12px; }
+}
+
+/* Form layout: every control the same width, and explanations kept to a readable
+   measure instead of running the full width of a wide screen. */
+.altgenix-card > h3 { margin: 0 0 6px; font-size: 16px; font-weight: 600; color: #1d2327; }
+.altgenix-card > h3 + .description { margin: 0 0 22px; }
+
+.altgenix-form-row .altgenix-custom-select,
+.altgenix-form-row .altgenix-input-wrapper { max-width: 400px; }
+.altgenix-form-row .description { max-width: 680px; margin: 10px 0 0; font-size: 13px; line-height: 1.7; color: #6c757d; }
+.altgenix-form-row .description strong { color: #495057; }
+.altgenix-form-row > label:not(.altgenix-switch) + .description { margin-top: -2px; margin-bottom: 10px; }
+
+/* The toggle needs room of its own, not a label's bottom margin. */
+.altgenix-form-row > label.altgenix-switch { margin: 2px 0 0; }
+
+/* Narrow contexts keep narrow controls. */
+.altgenix-length-col .altgenix-custom-select { max-width: 200px; }
+.altgenix-table-filters .altgenix-custom-select { max-width: 190px; }
+#altgenix-apply-filter { height: 44px; display: inline-flex; align-items: center; box-sizing: border-box; }
+
+/* Two settings per line where they belong together: provider with its key, model
+   with what happens when that model is busy.
+   The grid lives on the CARD, never on the rows themselves — jQuery writes an
+   inline display onto the rows when the mode toggle slides them, and a grid item
+   keeps taking part in the grid whatever its own display says. */
+.altgenix-form-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px 0; align-items: start; }
+.altgenix-form-grid > h3,
+.altgenix-form-grid > .altgenix-form-row-wide { grid-column: 1 / -1; }
+
+/* Row spacing is the grid's job here, so the single-column rhythm steps aside. */
+.altgenix-form-grid > .altgenix-form-row,
+.altgenix-form-grid > .altgenix-form-row + .altgenix-form-row { padding: 0; border-top: none; }
+
+/* Half-width columns: the control fills its own column rather than stopping at
+   the single-column cap, and help text follows suit. */
+.altgenix-form-grid > .altgenix-form-row:not(.altgenix-form-row-wide) .altgenix-custom-select,
+.altgenix-form-grid > .altgenix-form-row:not(.altgenix-form-row-wide) .altgenix-input-wrapper,
+.altgenix-form-grid > .altgenix-form-row:not(.altgenix-form-row-wide) .description { max-width: 100%; }
+
+@media screen and (max-width: 1100px) {
+    .altgenix-form-grid { grid-template-columns: minmax(0, 1fr); gap: 22px 0; }
+}
+
+/* Tooltips for form labels */
+.altgenix-tip {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: 6px;
+    color: #94a3b8;
+    cursor: help;
+    vertical-align: middle;
+}
+.altgenix-tip:hover {
+    color: #6366f1;
+}
+.altgenix-tip svg {
+    display: block;
+}
+.altgenix-tip .altgenix-tip-content {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 0;
+    transform: translateY(4px);
+    background: #1e293b;
+    color: #f8fafc;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 400;
+    white-space: normal;
+    width: max-content;
+    max-width: 280px;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s, transform 0.2s;
+    z-index: 1000;
+    pointer-events: none;
+    line-height: 1.5;
+    text-transform: none;
+    box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);
+    text-align: left;
+}
+/* Invisible bridge so mouse doesn't fall off when moving to tooltip */
+.altgenix-tip .altgenix-tip-content::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 0;
+    width: 100%;
+    height: 12px;
+}
+/* Ensure tooltip content fits on small screens by shifting left if needed */
+@media screen and (max-width: 782px) {
+    .altgenix-tip .altgenix-tip-content {
+        left: 0;
+        transform: translateX(0) translateY(4px);
+    }
+    .altgenix-tip:hover .altgenix-tip-content {
+        transform: translateX(0) translateY(0);
+    }
+    .altgenix-tip .altgenix-tip-content::before {
+        left: 12px;
+    }
+}
+.altgenix-tip .altgenix-tip-content::before {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 12px;
+    transform: none;
+    border-width: 5px;
+    border-style: solid;
+    border-color: #1e293b transparent transparent transparent;
+}
+.altgenix-tip:hover .altgenix-tip-content {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+    pointer-events: auto;
+}
+.altgenix-tip .altgenix-tip-content a {
+    color: #818cf8;
+    text-decoration: underline;
+    font-weight: 500;
+}
+.altgenix-tip .altgenix-tip-content a:hover {
+    color: #a5b4fc;
+}
+
+/* --- Toast Notifications --- */
+.altgenix-toast-container {
+    position: fixed;
+    bottom: 30px;
+    right: 30px;
+    z-index: 999999;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.altgenix-toast {
+    min-width: 250px;
+    max-width: 350px;
+    padding: 14px 20px;
+    background: #1f2937;
+    color: #fff;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.4;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    transform: translateX(120%);
+    opacity: 0;
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.3s ease;
+    border-left: 5px solid #6366f1;
+}
+
+.altgenix-toast.show {
+    transform: translateX(0);
+    opacity: 1;
+}
+
+.altgenix-toast-success {
+    border-left-color: #10b981; /* Emerald green */
+}
+
+.altgenix-toast-error {
+    border-left-color: #ef4444; /* Red */
+}
+
+
+
+/* Media modal primary action: keep the icon readable on the indigo button without
+   changing the purple icon-only regenerate action used in the bulk table. */
+.button.button-primary.altgenix-regenerate-btn .dashicons,
+.button.button-primary.altgenix-regenerate-btn:hover .dashicons,
+.button.button-primary.altgenix-regenerate-btn:focus .dashicons {
+    color: #fff !important;
+}
+
+/* Optional destructive cleanup shown only for manual Rename. */
+.altgenix-modal-extra { margin: -8px 0 24px; }
+.altgenix-delete-old-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 12px 14px;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    background: #f8fafc;
+    cursor: pointer;
+}
+.altgenix-modal-extra .altgenix-delete-old-option + .altgenix-delete-old-option { margin-top: 10px; }
+.altgenix-delete-old-option input { margin: 3px 0 0; flex: none; }
+.altgenix-delete-old-option span { display: flex; flex-direction: column; gap: 4px; color: #374151; }
+.altgenix-delete-old-option strong { font-size: 13px; font-weight: 600; color: #1f2937; }
+.altgenix-delete-old-option small { font-size: 12px; line-height: 1.45; color: #6b7280; }
+
+/* Settings actions: verification and key removal are actions, not preferences. */
+.altgenix-key-meta {
+    width: 100%;
+    max-width: 400px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 8px;
+}
+.altgenix-key-meta .altgenix-api-key-status { margin: 0; }
+.altgenix-link-danger {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: #dc2626;
+    padding: 4px 0;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    white-space: nowrap;
+}
+.altgenix-link-danger:hover,
+.altgenix-link-danger:focus { color: #b91c1c; text-decoration: underline; outline: none; }
+.altgenix-link-danger:disabled { opacity: .55; cursor: wait; text-decoration: none; }
+
+.altgenix-model-control {
+    width: 100%;
+    max-width: 680px;
+    display: grid;
+    grid-template-columns: minmax(0, 400px) auto;
+    gap: 10px;
+    align-items: start;
+}
+.altgenix-model-control .altgenix-custom-select { max-width: 400px !important; }
+.altgenix-verify-models-btn {
+    min-height: 44px;
+    justify-content: center;
+    white-space: nowrap;
+    box-sizing: border-box;
+}
+.altgenix-verify-models-btn:hover:not(:disabled),
+.altgenix-verify-models-btn:focus:not(:disabled) { background: #c7d2fe; color: #4338ca; }
+.altgenix-verify-models-btn:disabled { opacity: .55; cursor: not-allowed; }
+.altgenix-model-status {
+    max-width: 680px;
+    margin: 8px 0 0;
+    font-size: 12px;
+    line-height: 1.45;
+    font-weight: 600;
+}
+.altgenix-model-status.is-success { color: #059669; }
+.altgenix-model-status.is-neutral { color: #64748b; font-weight: 500; }
+.altgenix-model-status.is-error { color: #dc2626; }
+
+.altgenix-btn-danger {
+    background: #dc2626;
+    color: #fff;
+    border: none;
+    padding: 10px 24px;
+    border-radius: 8px;
+    font-size: 15px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: .2s ease;
+}
+.altgenix-btn-danger:hover,
+.altgenix-btn-danger:focus { background: #b91c1c; color: #fff; }
+
+@media screen and (max-width: 782px) {
+    .altgenix-model-control { grid-template-columns: minmax(0, 1fr); }
+    .altgenix-verify-models-btn { width: 100%; }
+    .altgenix-key-meta { align-items: flex-start; }
+}
+.altgenix-select-btn:disabled {
+    background: #f8fafc;
+    color: #94a3b8;
+    border-color: #e2e8f0;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+.altgenix-select-btn:disabled svg { color: #cbd5e1; }
+
+
+/* Bulk selection actions */
+.altgenix-bulk-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.altgenix-bulk-actions .altgenix-btn-primary,
+.altgenix-bulk-actions .altgenix-btn-secondary,
+.altgenix-bulk-actions .altgenix-btn-outline { display: inline-flex; align-items: center; gap: 6px; }
+.altgenix-bulk-actions .altgenix-btn-primary[disabled],
+.altgenix-bulk-actions .altgenix-btn-outline[disabled],
+.altgenix-bulk-actions .altgenix-btn-secondary[disabled] { opacity: .55; cursor: not-allowed; transform: none; }
+.altgenix-bulk-actions-help { flex-basis: 100%; font-size: 12px; color: #6b7280; margin-top: 2px; }
+.altgenix-col-select { width: 42px; text-align: center; }
+.altgenix-col-select input[type=checkbox] { margin: 0; }
+
+/* Regenerate field selector */
+.altgenix-field-options { margin-bottom: 12px; }
+.altgenix-field-options-title { font-size: 13px; font-weight: 600; color: #374151; margin: 0 0 10px; }
+.altgenix-field-options-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.altgenix-field-option { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid #e5e7eb; border-radius: 8px; background: #f8fafc; cursor: pointer; min-height: 42px; box-sizing: border-box; }
+.altgenix-field-option input { margin: 0; }
+.altgenix-field-option span { font-size: 13px; font-weight: 600; color: #1f2937; }
+.altgenix-field-option:hover { border-color: #c7d2fe; background: #eef2ff; }
+.altgenix-field-option.is-disabled { opacity: .55; cursor: not-allowed; }
+
+@media screen and (max-width: 980px) {
+    .altgenix-table-toolbar { flex-direction: column; align-items: stretch; gap: 14px; }
+    .altgenix-bulk-actions { justify-content: flex-start; }
+}
+@media screen and (max-width: 782px) {
+    .altgenix-field-options-grid { grid-template-columns: minmax(0, 1fr); }
+    .altgenix-bulk-actions .altgenix-btn-primary,
+    .altgenix-bulk-actions .altgenix-btn-secondary,
+    .altgenix-bulk-actions .altgenix-btn-outline { width: 100%; justify-content: center; }
+}
+
+
+/* Bulk optimizer alignment polish */
+.altgenix-table-toolbar {
+    align-items: flex-start;
+    gap: 24px;
+}
+.altgenix-table-filters {
+    flex: 0 0 auto;
+    min-height: 38px;
+}
+.altgenix-bulk-actions {
+    margin-left: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    justify-content: flex-start;
+    gap: 7px;
+    min-width: 0;
+}
+.altgenix-bulk-actions-buttons {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.altgenix-bulk-actions-buttons .altgenix-btn-primary,
+.altgenix-bulk-actions-buttons .altgenix-btn-secondary,
+.altgenix-bulk-actions-buttons .altgenix-btn-outline {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 38px;
+    box-sizing: border-box;
+    white-space: nowrap;
+}
+.altgenix-bulk-actions-help {
+    flex-basis: auto;
+    width: auto;
+    margin: 0;
+    text-align: right;
+    line-height: 1.35;
+}
+.altgenix-table th.altgenix-col-select,
+.altgenix-table td.altgenix-col-select {
+    width: 44px;
+    min-width: 44px;
+    max-width: 44px;
+    padding-left: 10px;
+    padding-right: 10px;
+    text-align: center;
+    box-sizing: border-box;
+}
+.altgenix-table th.altgenix-col-select input[type="checkbox"],
+.altgenix-table td.altgenix-col-select input[type="checkbox"] {
+    display: block;
+    margin: 0 auto !important;
+    float: none;
+}
+
+@media screen and (max-width: 1180px) {
+    .altgenix-table-toolbar {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 14px;
+    }
+    .altgenix-bulk-actions {
+        margin-left: 0;
+        align-items: flex-start;
+    }
+    .altgenix-bulk-actions-buttons {
+        justify-content: flex-start;
+    }
+    .altgenix-bulk-actions-help {
+        text-align: left;
+    }
+}
+@media screen and (max-width: 782px) {
+    .altgenix-bulk-actions-buttons {
+        width: 100%;
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .altgenix-bulk-actions-buttons .altgenix-btn-primary,
+    .altgenix-bulk-actions-buttons .altgenix-btn-secondary,
+    .altgenix-bulk-actions-buttons .altgenix-btn-outline {
+        width: 100%;
+    }
+}
