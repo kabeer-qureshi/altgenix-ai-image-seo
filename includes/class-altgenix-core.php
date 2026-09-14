@@ -67,7 +67,7 @@ class ALTGENIX_Core {
         add_filter( 'wp_generate_attachment_metadata', array( $this, 'attachment_metadata_ready' ), 100, 3 );
         add_action( 'shutdown', array( $this, 'finish_uploads' ) );
         add_action( 'altgenix_background_process_image', array( $this, 'process_new_attachment' ), 10, 1 );
-        foreach ( array( 'get_pending', 'process_image', 'mark_all_processed', 'mark_selected_processed', 'get_auto_queue', 'process_auto', 'rename_existing' ) as $action ) {
+        foreach ( array( 'get_pending', 'process_image', 'mark_selected_processed', 'get_auto_queue', 'process_auto', 'rename_existing' ) as $action ) {
             add_action( 'wp_ajax_altgenix_' . $action, array( $this, 'ajax_' . $action ) );
         }
     }
@@ -81,7 +81,13 @@ class ALTGENIX_Core {
     public static function queue_mime_types() { return array( 'image' ); }
 
     public function schedule_background_processing( $attachment_id ) {
-        $options = $this->apply_option_overrides( self::get_settings(), $options_override );
+        // This ran $options_override, which is not a parameter here and never has
+        // been. On PHP 8 that is a warning on every single upload, printed into the
+        // add_attachment request — and when display_errors is on it lands in the
+        // uploader's AJAX response and leaves the media uploader stuck on
+        // "Crunching..." forever. There are no overrides at upload time; the saved
+        // settings are the whole story.
+        $options = self::get_settings();
         if ( ! wp_attachment_is_image( $attachment_id ) || ! $options['auto_upload'] || ! self::has_generation( $options ) ) { return; }
         update_post_meta( $attachment_id, '_altgenix_auto', 'waiting' );
         $this->ready_at_shutdown[ $attachment_id ] = $attachment_id;
@@ -269,37 +275,6 @@ class ALTGENIX_Core {
         }
         $this->send_result( $this->process_new_attachment( $id, true, $rename_file, $delete_old, $overrides ) );
     }
-
-    public function ajax_mark_all_processed() {
-        $this->authorize( 'manage_options' );
-        $query = new WP_Query( array(
-            'post_type' => 'attachment', 'post_status' => 'inherit', 'post_mime_type' => 'image',
-            'posts_per_page' => 100, 'fields' => 'ids', 'orderby' => 'ID', 'order' => 'ASC',
-            'meta_query' => array(
-                array( 'key' => '_altgenix_processed', 'compare' => 'NOT EXISTS' ),
-                array( 'key' => '_altgenix_error', 'compare' => 'NOT EXISTS' ),
-                array( 'key' => '_altgenix_auto', 'compare' => 'NOT EXISTS' ),
-            ),
-        ) );
-        $count = 0;
-        foreach ( $query->posts as $id ) {
-            $token = ALTGENIX_Lock::acquire( $id );
-            if ( ! $token ) { continue; }
-            $save_error = false;
-            try {
-                if ( ! get_post_meta( $id, '_altgenix_auto', true ) && ! metadata_exists( 'post', $id, '_altgenix_error' ) ) {
-                    if ( ! update_post_meta( $id, '_altgenix_processed', '1' ) && get_post_meta( $id, '_altgenix_processed', true ) !== '1' ) {
-                        $save_error = true;
-                    }
-                    if ( ! $save_error ) { $count++; }
-                }
-            } finally { ALTGENIX_Lock::release( $id, $token ); }
-            // wp_send_json_* exits; release the lock before terminating the request.
-            if ( $save_error ) { wp_send_json_error( array( 'message' => 'Could not save processed status. Please retry.' ) ); }
-        }
-        wp_send_json_success( array( 'count' => $count, 'remaining' => max( 0, (int) $query->found_posts - $count ) ) );
-    }
-
     public function ajax_mark_selected_processed() {
         $this->authorize( 'manage_options' );
         $ids = $this->request_image_ids();
@@ -347,7 +322,13 @@ class ALTGENIX_Core {
         if ( get_post_type( $attachment_id ) !== 'attachment' || ! wp_attachment_is_image( $attachment_id ) || get_post_field( 'post_status', $attachment_id ) !== 'inherit' ) {
             return new WP_Error( 'altgenix_not_image', 'Attachment is not an active image.' );
         }
-        $options = self::get_settings();
+        // $options_override carries the field choices from the "Choose what to
+        // regenerate" dialog. It was accepted as a parameter and then never applied,
+        // so ticking a subset of fields did nothing and every manual regeneration
+        // silently used the saved Generation Control toggles instead. The override
+        // line existed — it had been written into schedule_background_processing()
+        // above, where it made no sense and broke uploads instead.
+        $options = $this->apply_option_overrides( self::get_settings(), $options_override );
         if ( ! $is_bulk && ( ! $options['auto_upload'] || get_post_meta( $attachment_id, '_altgenix_auto', true ) !== '1' ) ) {
             return new WP_Error( 'altgenix_not_queued', 'Automatic processing is disabled or this upload is not ready.' );
         }
@@ -423,7 +404,14 @@ class ALTGENIX_Core {
                 delete_post_meta( $id, '_altgenix_pending_filename' );
             }
         }
-        $result = array( 'status' => 'success', 'message' => $options['rename_file'] ? 'AI metadata saved and filename updated.' : 'AI metadata saved.' );
+        // The queue table's text column shows the attachment title. Sending it back
+        // lets the row settle on what is now true instead of keeping the pre-run
+        // placeholder beside a green "Processed" badge.
+        $result = array(
+            'status'     => 'success',
+            'message'    => $options['rename_file'] ? 'AI metadata saved and filename updated.' : 'AI metadata saved.',
+            'item_title' => get_the_title( $id ),
+        );
         if ( is_array( $rename_result ) ) {
             if ( ! empty( $rename_result['new_filename'] ) ) { $result['new_filename'] = $rename_result['new_filename']; }
             if ( isset( $rename_result['deleted_old_files'] ) ) { $result['deleted_old_files'] = (int) $rename_result['deleted_old_files']; }
@@ -482,7 +470,8 @@ class ALTGENIX_Core {
             if ( ! empty( $options[ $toggle ] ) ) { $data[ $field ] = $text; }
         }
         $result = $this->save_metadata( $id, $data, $options );
-        return is_wp_error( $result ) ? $result : array( 'status' => 'fallback', 'message' => 'Metadata generated from the filename.' );
+        if ( is_wp_error( $result ) ) { return $result; }
+        return array( 'status' => 'fallback', 'message' => 'Metadata generated from the filename.', 'item_title' => get_the_title( $id ) );
     }
 
     public function ajax_rename_existing() {

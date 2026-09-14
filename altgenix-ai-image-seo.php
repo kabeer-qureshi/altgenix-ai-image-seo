@@ -3,7 +3,7 @@
  * Plugin Name: AltGenix AI Image SEO
  * Plugin URI:  https://github.com/kabeer-qureshi/altgenix-ai-image-seo/
  * Description: Automatically generate SEO-optimized Alt Text, Titles, and Descriptions for uploaded images using your choice of Google Gemini, OpenAI (GPT-4o), Anthropic Claude, or DeepSeek Vision AI.
- * Version:     1.2.0
+ * Version:     1.2.1
  * Author:      Abdul Kabeer
  * Author URI:  https://www.linkedin.com/in/abdulkabeerdeveloper
  * License:     GPLv2 or later
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 if ( ! defined( 'ALTGENIX_VERSION' ) ) {
-    define( 'ALTGENIX_VERSION', '1.2.0' );
+    define( 'ALTGENIX_VERSION', '1.2.1' );
 }
 if ( ! defined( 'ALTGENIX_PLUGIN_DIR' ) ) {
     define( 'ALTGENIX_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );

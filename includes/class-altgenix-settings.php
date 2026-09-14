@@ -329,9 +329,12 @@ class ALTGENIX_Settings {
         }
 
         $rate_key = 'altgenix_feedback_sent_' . get_current_user_id();
-        if ( get_transient( $rate_key ) ) { wp_send_json_error( array( 'message' => 'Please wait one minute before sending again.' ), 429 ); }
-        set_transient( $rate_key, 1, MINUTE_IN_SECONDS );
+        if ( get_transient( $rate_key ) ) { wp_send_json_error( array( 'message' => 'Please wait a moment before sending again.' ), 429 ); }
         $delivered = (bool) wp_mail( $to, $subject, $message, $headers );
+        // The limit still applies to a failed send — the attempt was made — but a
+        // full minute's wait for a message that never left the site punishes the
+        // user for the host's mail setup rather than for sending too often.
+        set_transient( $rate_key, 1, $delivered ? MINUTE_IN_SECONDS : 15 );
 
         // Plenty of WordPress installs cannot send mail at all. Reporting success
         // anyway would lose the feedback AND tell the user it had arrived, so the
@@ -397,8 +400,8 @@ class ALTGENIX_Settings {
         $desc_text = $mode === 'ai' ? 'Click to let AI analyze and auto-fill Alt Text, Title, Caption, and Description.' : 'Click to auto-fill tags using the original filename.';
         ?>
         <div class="misc-pub-section misc-pub-altgenix" style="padding-top: 15px; border-top: 1px solid #dcdcde; margin-top: 10px;">
-            <button type="button" class="button button-primary button-large altgenix-regenerate-btn" data-id="<?php echo esc_attr( $post->ID ); ?>" data-ai-mode="<?php echo $mode === 'ai' ? '1' : '0'; ?>" data-can-rename="<?php echo current_user_can( 'manage_options' ) ? '1' : '0'; ?>" data-rename-default="<?php echo ! empty( $options['rename_file'] ) ? '1' : '0'; ?>" <?php echo $this->generation_button_data_attributes( $options ); ?> style="width: 100%; text-align: center; background: #6366f1 !important; border-color: #4f46e5 !important; color: #ffffff !important; text-shadow: none !important; display: flex; align-items: center; justify-content: center; gap: 6px; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); padding: 0 12px; height: auto; min-height: 32px;">
-                <span class="dashicons dashicons-art" style="display: flex; align-items: center; justify-content: center;"></span> <span class="altgenix-btn-text" style="display: flex; align-items: center;"><?php echo esc_html($btn_text); ?></span>
+            <button type="button" class="button button-primary button-large altgenix-regenerate-btn altgenix-media-btn altgenix-media-btn-block" data-id="<?php echo esc_attr( $post->ID ); ?>" data-ai-mode="<?php echo $mode === 'ai' ? '1' : '0'; ?>" data-can-rename="<?php echo current_user_can( 'manage_options' ) ? '1' : '0'; ?>" data-rename-default="<?php echo ! empty( $options['rename_file'] ) ? '1' : '0'; ?>" <?php echo $this->generation_button_data_attributes( $options ); ?>>
+                <span class="dashicons dashicons-art"></span> <span class="altgenix-btn-text"><?php echo esc_html($btn_text); ?></span>
             </button>
             <p class="description"><?php echo esc_html($desc_text); ?></p>
         </div>
@@ -415,7 +418,7 @@ class ALTGENIX_Settings {
         $form_fields['altgenix_generate'] = array(
             'label' => $label_text,
             'input' => 'html',
-            'html'  => '<button type="button" class="button button-primary altgenix-regenerate-btn" data-id="' . esc_attr( $post->ID ) . '" data-ai-mode="' . ( $mode === 'ai' ? '1' : '0' ) . '" data-can-rename="' . ( current_user_can( 'manage_options' ) ? '1' : '0' ) . '" data-rename-default="' . ( ! empty( $options['rename_file'] ) ? '1' : '0' ) . '" ' . $this->generation_button_data_attributes( $options ) . ' style="background: #6366f1 !important; border-color: #4f46e5 !important; color: #ffffff !important; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 4px 12px; height: auto; min-height: 32px;"><span class="dashicons dashicons-art" style="display: flex; align-items: center; justify-content: center;"></span> <span style="display: flex; align-items: center;">' . esc_html($btn_text) . '</span></button>',
+            'html'  => '<button type="button" class="button button-primary altgenix-regenerate-btn altgenix-media-btn" data-id="' . esc_attr( $post->ID ) . '" data-ai-mode="' . ( $mode === 'ai' ? '1' : '0' ) . '" data-can-rename="' . ( current_user_can( 'manage_options' ) ? '1' : '0' ) . '" data-rename-default="' . ( ! empty( $options['rename_file'] ) ? '1' : '0' ) . '" ' . $this->generation_button_data_attributes( $options ) . '><span class="dashicons dashicons-art"></span> <span>' . esc_html($btn_text) . '</span></button>',
         );
         return $form_fields;
     }
@@ -537,16 +540,16 @@ class ALTGENIX_Settings {
 
             <?php $this->render_services_banner(); ?>
             <?php settings_errors( 'altgenix_setting_group' ); ?>
-            <div class="altgenix-tabs">
-                <button class="altgenix-tab-link active" data-tab="tab-general">General Settings</button>
-                <button class="altgenix-tab-link" data-tab="tab-controls">Generation Control</button>
-                <button class="altgenix-tab-link" data-tab="tab-advanced">Advanced</button>
+            <div class="altgenix-tabs" role="tablist" aria-label="AltGenix settings sections">
+                <button type="button" class="altgenix-tab-link active" role="tab" id="tab-general-label" aria-controls="tab-general" aria-selected="true" data-tab="tab-general">General Settings</button>
+                <button type="button" class="altgenix-tab-link" role="tab" id="tab-controls-label" aria-controls="tab-controls" aria-selected="false" data-tab="tab-controls">Generation Control</button>
+                <button type="button" class="altgenix-tab-link" role="tab" id="tab-advanced-label" aria-controls="tab-advanced" aria-selected="false" data-tab="tab-advanced">Advanced</button>
             </div>
 
             <form method="post" id="altgenix-settings-form" action="options.php">
                 <?php settings_fields( 'altgenix_setting_group' ); ?>
                 
-                <div class="altgenix-tab-content active" id="tab-general">
+                <div class="altgenix-tab-content active" id="tab-general" role="tabpanel" aria-labelledby="tab-general-label">
                     <div class="altgenix-card altgenix-form-grid">
                         <h3>General Settings</h3>
                         <div class="altgenix-form-row altgenix-form-row-wide">
@@ -647,7 +650,7 @@ class ALTGENIX_Settings {
                     </div>
                 </div>
 
-                <div class="altgenix-tab-content" id="tab-controls">
+                <div class="altgenix-tab-content" id="tab-controls" role="tabpanel" aria-labelledby="tab-controls-label">
                     <div class="altgenix-card">
                         <h3>Generation Control</h3>
                         <label><input type="checkbox" name="altgenix_settings[auto_upload]" value="1" <?php checked( 1, $options['auto_upload'] ); ?>> Automatically process new uploads</label>
@@ -700,7 +703,7 @@ class ALTGENIX_Settings {
                     </div>
                 </div>
 
-                <div class="altgenix-tab-content" id="tab-advanced">
+                <div class="altgenix-tab-content" id="tab-advanced" role="tabpanel" aria-labelledby="tab-advanced-label">
                     <div class="altgenix-card">
                         <h3>Advanced Options</h3>
                         <div class="altgenix-form-row">
@@ -743,6 +746,16 @@ class ALTGENIX_Settings {
         return implode( ' ', $attrs );
     }
 
+    /**
+     * Rows per page on the queue table.
+     *
+     * Ten was hardcoded, and since a selection only covers the rows on screen that
+     * put a hard ceiling of ten images on every "Regenerate Selected". The whole
+     * library is still the Auto-Tag button's job; this is for working through a
+     * known set by hand.
+     */
+    private const PER_PAGE_CHOICES = array( 10, 25, 50, 100 );
+
     public function create_bulk_optimizer_page() {
         $options = get_option( 'altgenix_settings', array() );
         $mode = isset( $options['mode'] ) ? $options['mode'] : 'fallback';
@@ -750,6 +763,9 @@ class ALTGENIX_Settings {
         $status_filter = isset( $_GET['altgenix_status'] ) && is_string( $_GET['altgenix_status'] ) ? sanitize_text_field( wp_unslash( $_GET['altgenix_status'] ) ) : 'all';
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended
         $paged = isset( $_GET['paged'] ) && is_scalar( $_GET['paged'] ) ? max( 1, intval( wp_unslash( $_GET['paged'] ) ) ) : 1;
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+        $per_page = isset( $_GET['altgenix_per_page'] ) && is_scalar( $_GET['altgenix_per_page'] ) ? intval( wp_unslash( $_GET['altgenix_per_page'] ) ) : 25;
+        if ( ! in_array( $per_page, self::PER_PAGE_CHOICES, true ) ) { $per_page = 25; }
         
         ?>
         <div class="altgenix-saas-wrap">
@@ -769,6 +785,12 @@ class ALTGENIX_Settings {
                             <option value="failed" <?php selected($status_filter, 'failed'); ?>>Failed</option>
                         </select>
                         <button id="altgenix-apply-filter" class="altgenix-btn-outline" style="margin-left: 10px;">Filter</button>
+                        <select id="altgenix-per-page" class="altgenix-select altgenix-per-page" aria-label="Images per page">
+                            <?php foreach ( self::PER_PAGE_CHOICES as $choice ) {
+                                /* translators: %d: number of rows shown per page. */
+                                echo '<option value="' . esc_attr( $choice ) . '" ' . selected( $per_page, $choice, false ) . '>' . esc_html( sprintf( '%d per page', $choice ) ) . '</option>';
+                            } ?>
+                        </select>
                     </div>
                     
                     <?php 
@@ -819,16 +841,22 @@ class ALTGENIX_Settings {
                     <div class="altgenix-progress-bar">
                         <div id="altgenix-progress-fill" class="altgenix-progress-fill"></div>
                     </div>
-                    <div class="altgenix-progress-text">
-                        <span id="altgenix-progress-percentage">0%</span> - <span id="altgenix-progress-status">Processing...</span>
+                    <div class="altgenix-progress-footer">
+                        <div class="altgenix-progress-text">
+                            <span id="altgenix-progress-percentage">0%</span> - <span id="altgenix-progress-status">Processing...</span>
+                        </div>
+                        <?php // A long run is otherwise only escapable by closing the tab. ?>
+                        <button type="button" id="altgenix-stop-run" class="altgenix-btn-outline altgenix-stop-run">Stop</button>
                     </div>
                 </div>
                 
+                <?php // Seven columns do not fit a phone. Scrolling the table beats breaking the page. ?>
+                <div class="altgenix-table-scroll">
                 <table class="altgenix-table">
                     <thead><tr><th class="altgenix-col-select"><input type="checkbox" id="altgenix-select-all" aria-label="Select all visible images"></th><th>Image</th><th>File Name</th><th>Title / Error</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead>
                     <tbody>
                         <?php
-                        $args = array( 'post_type' => 'attachment', 'post_mime_type' => $supported_mimes, 'post_status' => 'inherit', 'posts_per_page' => 10, 'paged' => $paged );
+                        $args = array( 'post_type' => 'attachment', 'post_mime_type' => $supported_mimes, 'post_status' => 'inherit', 'posts_per_page' => $per_page, 'paged' => $paged );
                         
                         if ( $status_filter === 'processed' ) { $args['meta_query'] = array( array( 'key' => '_altgenix_processed', 'value' => '1', 'compare' => '=' ), array( 'key' => '_altgenix_error', 'compare' => 'NOT EXISTS' ) ); } 
                         elseif ( $status_filter === 'pending' ) { 
@@ -867,7 +895,8 @@ class ALTGENIX_Settings {
                                     <td class="altgenix-col-select"><?php if ( current_user_can( 'edit_post', $id ) ) : ?><input type="checkbox" class="altgenix-row-select" value="<?php echo esc_attr( $id ); ?>" aria-label="Select image <?php echo esc_attr( wp_basename( get_attached_file( $id ) ) ); ?>"><?php endif; ?></td>
                                     <td><div class="altgenix-img-thumb"><?php echo $thumb ? wp_kses_post( $thumb ) : '<span class="dashicons dashicons-format-image"></span>'; ?></div></td>
                                     <td class="altgenix-filename-cell"><strong><?php echo esc_html( wp_basename( get_attached_file( $id ) ) ); ?></strong></td>
-                                    <td class="altgenix-text-muted" title="<?php echo esc_attr( wp_strip_all_tags( $error !== '' ? $error : $title ) ); ?>"><?php echo esc_html( $text ); ?></td>
+                                    <?php // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- $title_attr is assembled from esc_attr() above. ?>
+                                    <td class="altgenix-text-muted"<?php echo $title_attr; ?>><?php echo esc_html( $text ); ?></td>
                                     <td><span class="altgenix-badge altgenix-status-badge <?php echo esc_attr( $bg ); ?>"><?php echo esc_html( $stat ); ?></span></td>
                                     <td><?php echo esc_html( get_the_date( 'M j' ) ); ?></td>
                                     <td>
@@ -887,6 +916,7 @@ class ALTGENIX_Settings {
                         ?>
                     </tbody>
                 </table>
+                </div>
                 <?php if ( $query->max_num_pages > 1 ) { echo '<div class="altgenix-pagination">'; echo wp_kses_post( paginate_links( array( 'base' => add_query_arg( 'paged', '%#%' ), 'format' => '', 'current' => $paged, 'total' => $query->max_num_pages, 'prev_text' => '&laquo; Prev', 'next_text' => 'Next &raquo;' ) ) ); echo '</div>'; } wp_reset_postdata(); ?>
             </div>
 
@@ -1169,7 +1199,7 @@ class ALTGENIX_Settings {
                         We appreciate it — that is genuinely what shapes what gets built next.
                     <?php endif; ?>
                 </p>
-                <button type="button" class="button" id="altgenix-rate-again" style="margin-top: 10px;">Send more feedback</button>
+                <button type="button" class="altgenix-btn-outline" id="altgenix-rate-again" style="margin-top: 10px;">Send more feedback</button>
             </div>
             <?php endif; ?>
 
@@ -1212,7 +1242,10 @@ class ALTGENIX_Settings {
         check_ajax_referer( 'altgenix_ajax_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) { wp_send_json_error( array( 'message' => 'Unauthorized access.' ), 403 ); }
         $user_id = get_current_user_id();
-        set_transient( 'altgenix_banner_dismissed_' . $user_id, 1, DAY_IN_SECONDS );
+        // A promotion that reappears every morning on the screen you use to do your
+        // work is the thing people actually resent. Thirty days is the shortest
+        // interval that still reads as "dismissed" rather than "snoozed".
+        set_transient( 'altgenix_banner_dismissed_' . $user_id, 1, 30 * DAY_IN_SECONDS );
         wp_send_json_success();
     }
 

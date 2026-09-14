@@ -4,7 +4,7 @@ Tags: auto alt text, seo, image optimization, openai, claude
 Requires at least: 5.8
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.2.0
+Stable tag: 1.2.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -77,28 +77,36 @@ Settings and queues are per-site. Network uninstall clears plugin settings, jobs
 
 == Upgrade Notice ==
 
+= 1.2.1 =
+Fixes two faults introduced in 1.2.0: image uploads could hang on "Crunching..." forever, and the "choose what to regenerate" field selection was ignored. Recommended for everyone on 1.2.0.
+
 = 1.2.0 =
 Security and data-integrity fixes: server-side keys, safe file copies, reliable queues and strict AI validation. Rotate keys if a previous build exposed them to untrusted uploaders. Back up and test on staging first.
 
 == Changelog ==
 
-= 1.2.0 =
-* Security: Removed API keys from localized scripts and rendered settings; added explicit key removal and a secure masked saved-key state without rendering the secret.
-* Security: Corrected rename and banner nonces, per-attachment authorization, provider error redaction and text-only UI notices.
-* Data safety: Replaced destructive renames and global SQL URL replacement with verified copies; preserved GUIDs, serialized data and published URLs.
-* Fix: Bulk runs use an increasing attachment-ID cursor and continue beyond failed 100-image batches.
-* Fix: Atomic per-image locks cover automatic processing, manual regeneration and renaming; an expired owner cannot release another request's lock.
-* Fix: Upload readiness is finalized at request shutdown after WordPress image metadata generation.
-* Fix: All field-toggle combinations behave consistently; disabled fields are preserved, no-op runs stay pending, and rename-only runs request a filename.
-* Fix: Rejected incomplete, empty, malformed and refused AI responses; failures preserve existing metadata and remain retryable.
-* Fix: Preserved settings on verification failure, avoided double unslashing, blocked duplicate saves and retained edits typed during an in-flight save.
-* Fix: Bounded provider requests, respected numeric/date Retry-After, avoided retrying transport timeouts, and paginated Gemini/Claude model discovery.
-* Fix: Queues include WordPress image types that require local conversion; cropped thumbnails are excluded from AI inputs.
-* Fix: Checked database/file errors, kept source image bytes, made repeated renames idempotent, and added PHP-memory and actual-image-type validation.
-* Fix: Failed filename changes remain retryable; manual Rename reuses the saved AI filename without another generation charge.
-* Fix: Regenerating media no longer reloads editors and discards unsaved post content.
-* Fix: Repaired the Settings plugin action link, removed inline JavaScript, restored styled selects with keyboard/ARIA accessibility, and offered public reviews for every rating.
-* Cleanup: Added deactivation job cleanup and multisite-aware uninstall while preserving media, processed-status/rename history and backup URLs so reinstalling does not re-queue already optimized images.
+= 1.2.1 =
+* Fix: Uploading an image could leave the media uploader stuck on "Crunching..." and never finish. A PHP warning raised on every upload was corrupting the response the uploader waits for. The images were still being tagged correctly underneath, but the screen never said so. Introduced in 1.2.0.
+* Fix: "Choose what to regenerate" now limits the run to the fields you actually tick. The selection was being discarded, so a manual regeneration always used the saved Generation Control toggles instead. Introduced in 1.2.0.
+* Fix: Rating five stars no longer opens the "tell us what went wrong" form alongside the review link. Low ratings get the feedback form, high ratings get the review link.
+* Fix: "Regenerate Selected" now shows the progress bar while it works, instead of leaving the screen looking frozen, and the bar is cleared when the run ends rather than staying on screen.
+* New: Bulk runs can be stopped. A Stop button sits with the progress bar and halts the run after the image in flight finishes, so nothing is left half-written.
+* Fix: A failed image now turns red and shows the error in the list instead of still reading "Pending", and a processed image shows its new title instead of "Awaiting Action..." beside a green badge.
+* Fix: Regenerating in Original Filename mode now marks the row as processed. It completed correctly but the status badge never updated.
+* New: The queue list has a rows-per-page control (10, 25, 50 or 100), so a selection is no longer capped at ten images.
+* Fix: The queue table scrolls on its own on narrow screens instead of stretching the page sideways.
+* Fix: The settings screen reopens on the tab you were last using, and the tabs can be operated with the arrow keys.
+* Fix: Buttons that are switched off now look switched off. The confirm button in the regenerate dialog and Save during a save stayed fully coloured, so pressing them appeared to do nothing.
+* Fix: Notifications no longer cover the Save button, can be dismissed with a close button, stay put while the pointer is over them, and errors remain readable for longer.
+* Fix: A request that simply took too long is reported as a timeout instead of claiming the login had expired.
+* Fix: The result of a file rename is reported, including partial failures and how many old files were removed. That detail was being produced and then discarded.
+* Fix: When this site cannot send email, the feedback form now shows the support-forum link it points you to.
+* Fix: Help tooltips open on keyboard focus and on touch, not only on mouse hover.
+* Fix: Confirmation dialogs close when the dimmed area around them is clicked.
+* Fix: The buttons on the Media Library and attachment screens respond to hover and show a visible keyboard focus ring.
+* New: Automatic processing after an upload now says what it is doing instead of running silently.
+* Change: The background check for new uploads slows down while there is nothing to do, reducing repeated admin-ajax requests on media screens.
+* Change: Dismissing the services banner keeps it hidden for thirty days instead of one.
 
 = 1.2.0 =
 * New: DeepSeek added as a fourth AI provider, using its vision-capable deepseek-flash model — a lower-cost option for high-volume image tagging. Requested on the support forum. Note that DeepSeek has no free tier, so the account needs a prepaid balance.
@@ -146,6 +154,22 @@ Security and data-integrity fixes: server-side keys, safe file copies, reliable 
 * Improvement: Oversized and unsupported images now fall back to filename-based text rather than leaving the attachment with no alt text at all.
 * Improvement: DeepSeek requests automatically retry as plain text if strict JSON output is rejected or comes back empty, so a JSON-mode limitation never costs you a generated tag.
 * Improvement: DeepSeek key verification performs a real generation check, so a key with an exhausted balance is reported upfront instead of silently falling back to filename mode.
+* Security: Removed API keys from localized scripts and rendered settings; added explicit key removal and a secure masked saved-key state without rendering the secret.
+* Security: Corrected rename and banner nonces, per-attachment authorization, provider error redaction and text-only UI notices.
+* Data safety: Replaced destructive renames and global SQL URL replacement with verified copies; preserved GUIDs, serialized data and published URLs.
+* Fix: Bulk runs use an increasing attachment-ID cursor and continue beyond failed 100-image batches.
+* Fix: Atomic per-image locks cover automatic processing, manual regeneration and renaming; an expired owner cannot release another request's lock.
+* Fix: Upload readiness is finalized at request shutdown after WordPress image metadata generation.
+* Fix: All field-toggle combinations behave consistently; disabled fields are preserved, no-op runs stay pending, and rename-only runs request a filename.
+* Fix: Rejected incomplete, empty, malformed and refused AI responses; failures preserve existing metadata and remain retryable.
+* Fix: Preserved settings on verification failure, avoided double unslashing, blocked duplicate saves and retained edits typed during an in-flight save.
+* Fix: Bounded provider requests, respected numeric/date Retry-After, avoided retrying transport timeouts, and paginated Gemini/Claude model discovery.
+* Fix: Queues include WordPress image types that require local conversion; cropped thumbnails are excluded from AI inputs.
+* Fix: Checked database/file errors, kept source image bytes, made repeated renames idempotent, and added PHP-memory and actual-image-type validation.
+* Fix: Failed filename changes remain retryable; manual Rename reuses the saved AI filename without another generation charge.
+* Fix: Regenerating media no longer reloads editors and discards unsaved post content.
+* Fix: Repaired the Settings plugin action link, removed inline JavaScript, restored styled selects with keyboard/ARIA accessibility, and offered public reviews for every rating.
+* Cleanup: Added deactivation job cleanup and multisite-aware uninstall while preserving media, processed-status/rename history and backup URLs so reinstalling does not re-queue already optimized images.
 
 = 1.1.2 =
 * Fix: Retired or deprecated Gemini models (e.g. gemini-2.5-flash) now automatically fall back to the next available model instead of stopping with an "AI Error".

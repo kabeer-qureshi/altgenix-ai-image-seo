@@ -25,11 +25,59 @@ jQuery(function ($) {
         if (res && res.responseJSON) { res = res.responseJSON; }
         return res && res.data && typeof res.data.message === 'string' ? res.data.message : fallback;
     }
-    function toast(text, error) {
+    function toast(text, error, link) {
         var container = $('.altgenix-toast-container');
         if (!container.length) { container = $('<div class="altgenix-toast-container" aria-live="polite"></div>').appendTo('body'); }
-        var item = $('<div class="altgenix-toast show"></div>').addClass(error ? 'altgenix-toast-error' : 'altgenix-toast-success').text(text).appendTo(container);
-        setTimeout(function () { item.remove(); }, 7000);
+        // The settings screen keeps a sticky save bar in the bottom-right corner,
+        // which is exactly where these land. Lift them clear of it on that screen.
+        container.toggleClass('altgenix-toast-container-raised', $('#altgenix-save-bar').length > 0);
+        var item = $('<div class="altgenix-toast show"></div>').addClass(error ? 'altgenix-toast-error' : 'altgenix-toast-success');
+        var body = $('<div class="altgenix-toast-body"></div>').appendTo(item);
+        $('<span class="altgenix-toast-text"></span>').text(text).appendTo(body);
+        // Somewhere to actually send people. The feedback endpoint answers a mail
+        // failure with "the link is below", and there was no link.
+        if (link && link.href) {
+            $('<a class="altgenix-toast-link" target="_blank" rel="noopener"></a>')
+                .attr('href', link.href).text(link.label || 'Open').appendTo(body);
+        }
+        $('<button type="button" class="altgenix-toast-close" aria-label="Dismiss notification">\u00d7</button>')
+            .on('click', function () { window.clearTimeout(item.data('timer')); item.remove(); })
+            .appendTo(item);
+        item.appendTo(container);
+        // Errors are usually the long ones worth reading, so they get longer, and
+        // hovering holds any of them open instead of pulling it away mid-sentence.
+        function schedule() { item.data('timer', window.setTimeout(function () { item.remove(); }, error ? 14000 : 7000)); }
+        item.on('mouseenter', function () { window.clearTimeout(item.data('timer')); }).on('mouseleave', schedule);
+        schedule();
+    }
+    // jQuery hands a failed request three arguments; only the first was being read,
+    // so a request that simply ran out of time was reported as an expired login and
+    // sent people off to sign in again for nothing.
+    function failMessage(xhr, textStatus, fallback) {
+        if (textStatus === 'timeout') {
+            return 'The request took too long and was cut off. The image may still have been processed \u2014 refresh the list before retrying.';
+        }
+        if (xhr && xhr.status === 403) {
+            return 'Your session has expired or the permission was withdrawn. Reload this page and sign in again.';
+        }
+        if (xhr && xhr.status === 0) {
+            return 'The connection to this site dropped before the request finished.';
+        }
+        return message(xhr, fallback);
+    }
+    // rename_copy() reports what happened to every file it touched. All of it was
+    // being returned and then thrown away, so a rename that half-failed read as a
+    // clean success.
+    function processToastText(res) {
+        var data = (res && res.data) || {};
+        var parts = [data.message || 'Image updated.'];
+        if (data.rename_message) { parts.push(data.rename_message); }
+        if (data.delete_failures) {
+            parts.push(data.delete_failures + ' old file' + (data.delete_failures === 1 ? '' : 's') + ' could not be deleted.');
+        } else if (data.deleted_old_files) {
+            parts.push(data.deleted_old_files + ' old file' + (data.deleted_old_files === 1 ? '' : 's') + ' deleted.');
+        }
+        return parts.join(' ');
     }
     function ensureModal() {
         if ($('#altgenix-modal').length) { return; }
@@ -116,7 +164,7 @@ jQuery(function ($) {
         $extra.toggle(!!options.showFields || !!options.showDeleteOld);
         $fieldOptions.find('input').off('change.altgenixModal').on('change.altgenixModal', refreshExtraState);
         function close() {
-            $('#altgenix-modal').removeClass('show').attr('aria-hidden', 'true');
+            $('#altgenix-modal').removeClass('show').attr('aria-hidden', 'true').off('click.altgenixBackdrop');
             $(document).off('keydown.altgenixModal');
             $fieldOptions.find('input').off('change.altgenixModal');
             if (previousFocus && previousFocus.focus) { previousFocus.focus(); }
@@ -137,6 +185,11 @@ jQuery(function ($) {
         });
         refreshExtraState();
         $('#altgenix-modal').addClass('show').attr({ role: 'dialog', 'aria-modal': 'true', 'aria-hidden': 'false', 'aria-labelledby': 'altgenix-modal-title' });
+        // Clicking the dimmed area is the same as Cancel. Nothing here is
+        // destructive on its own, so this cannot lose work.
+        $('#altgenix-modal').off('click.altgenixBackdrop').on('click.altgenixBackdrop', function (event) {
+            if (event.target === this) { close(); }
+        });
         $('#altgenix-modal-cancel').trigger('focus');
         $(document).off('keydown.altgenixModal').on('keydown.altgenixModal', function (event) {
             if (event.key === 'Escape') { close(); }
@@ -150,6 +203,16 @@ jQuery(function ($) {
             }
         });
     }
+    // These only ever opened on :hover, which means a keyboard user and anyone on a
+    // tablet could not read a single one of them.
+    $('.altgenix-tip').each(function () {
+        var $tip = $(this);
+        var description = $.trim($tip.find('.altgenix-tip-content').text());
+        $tip.attr({ tabindex: '0', role: 'button', 'aria-label': description ? 'Help: ' + description : 'More information' });
+    });
+    $(document).on('keydown', '.altgenix-tip', function (event) {
+        if (event.key === 'Escape') { $(this).trigger('blur'); }
+    });
     function markDirty() { dirty = true; revision++; $('#altgenix-save-state').prop('hidden', false); }
 
     if (config.bulk_url && !$('#altgenix-media-shortcut').length) {
@@ -277,11 +340,43 @@ jQuery(function ($) {
     $('.altgenix-select').each(function () { initCustomSelect($(this)); });
     $(document).on('change.altgenixCustomSelect', '.altgenix-select', function () { refreshCustomSelect($(this)); });
     $(document).on('click.altgenixCustomSelect', function () { $('.altgenix-custom-select.open').each(function () { closeCustomSelect($(this), false); }); });
-    $('.altgenix-tab-link').on('click', function () {
-        $('.altgenix-tab-link').removeClass('active').attr('aria-selected', 'false');
-        $(this).addClass('active').attr('aria-selected', 'true');
+    // Reloading used to drop you back on General no matter which tab you were
+    // working in. sessionStorage keeps it per browser tab and leaves the URL alone.
+    var TAB_STORE = 'altgenixSettingsTab';
+    function storeTab(id) { try { window.sessionStorage.setItem(TAB_STORE, id); } catch (e) {} }
+    function readTab() { try { return window.sessionStorage.getItem(TAB_STORE); } catch (e) { return null; } }
+    function activateTab(id) {
+        var $link = $('.altgenix-tab-link[data-tab="' + id + '"]');
+        if (!id || !$link.length || !$('#' + id).length) { return false; }
+        $('.altgenix-tab-link').removeClass('active').attr({ 'aria-selected': 'false', tabindex: '-1' });
+        $link.addClass('active').attr({ 'aria-selected': 'true', tabindex: '0' });
         $('.altgenix-tab-content').removeClass('active');
-        $('#' + $(this).data('tab')).addClass('active');
+        $('#' + id).addClass('active');
+        return true;
+    }
+    $('.altgenix-tab-link').on('click', function () {
+        var id = $(this).data('tab');
+        if (activateTab(id)) { storeTab(id); }
+    }).on('keydown', function (event) {
+        if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft' && event.key !== 'Home' && event.key !== 'End') { return; }
+        event.preventDefault();
+        var $links = $('.altgenix-tab-link');
+        var index = $links.index(this);
+        if (event.key === 'Home') { index = 0; }
+        else if (event.key === 'End') { index = $links.length - 1; }
+        else if (event.key === 'ArrowRight') { index = (index + 1) % $links.length; }
+        else { index = (index - 1 + $links.length) % $links.length; }
+        $links.eq(index).trigger('focus').trigger('click');
+    });
+    if ($('.altgenix-tab-link').length) {
+        $('.altgenix-tab-link').attr('tabindex', '-1');
+        if (!activateTab(readTab())) { activateTab($('.altgenix-tab-link').first().data('tab')); }
+    }
+    $('#altgenix-per-page').on('change', function () {
+        var url = new URL(window.location.href);
+        url.searchParams.set('altgenix_per_page', $(this).val());
+        url.searchParams.set('paged', '1');
+        window.location.href = url.toString();
     });
     $('#altgenix-apply-filter').on('click', function () {
         var url = new URL(window.location.href);
@@ -307,14 +402,39 @@ jQuery(function ($) {
     $(document).on('change', '.altgenix-row-select', updateBulkSelectionUI);
     updateBulkSelectionUI();
 
+    function trimWords(text, limit) {
+        var words = $.trim(String(text || '')).split(/\s+/);
+        return words.length <= limit ? words.join(' ') : words.slice(0, limit).join(' ') + '\u2026';
+    }
     function updateRowAfterAction(id, response, forceProcessed) {
         var $row = $('tr[data-image-id="' + id + '"]');
         if (!$row.length) { return; }
         if (response && response.new_filename) { $row.find('.altgenix-filename-cell strong').text(response.new_filename); }
         var $badge = $row.find('.altgenix-status-badge');
-        if (forceProcessed || (response && response.status === 'success')) {
+        var $detail = $row.find('.altgenix-text-muted').first();
+        var status = response && response.status;
+        // 'fallback' is Filename mode finishing successfully; it marks the image
+        // processed exactly like 'success' does, so the badge has to follow.
+        if (forceProcessed || status === 'success' || status === 'fallback') {
             $badge.removeClass('altgenix-badge-warning altgenix-badge-danger').addClass('altgenix-badge-success').text('Processed');
+            // Without this the row reads "Processed" beside "Awaiting Action...".
+            if (response && response.item_title) {
+                $detail.text(trimWords(response.item_title, 10)).attr('title', response.item_title).css('cursor', '');
+            }
             if ($row.find('.altgenix-regenerate-btn').attr('data-ai-mode') === '0') { $row.find('.altgenix-regenerate-btn').remove(); }
+        }
+    }
+    // A failed image used to sit there still saying "Pending", which reads as
+    // "nothing happened" rather than "this one needs another go".
+    function markRowFailed(id, errorText) {
+        var $row = $('tr[data-image-id="' + id + '"]');
+        if (!$row.length) { return; }
+        $row.find('.altgenix-status-badge')
+            .removeClass('altgenix-badge-warning altgenix-badge-success')
+            .addClass('altgenix-badge-danger').text('Failed');
+        if (errorText) {
+            $row.find('.altgenix-text-muted').first()
+                .text(trimWords(errorText, 8)).attr('title', errorText).css('cursor', 'help');
         }
     }
     function buildProcessPayload(id, modalData) {
@@ -329,14 +449,20 @@ jQuery(function ($) {
         if (!ids.length) { return; }
         bulkBusy = true;
         button.prop('disabled', true);
+        // This loop waits ~900ms per image on top of the provider round trip, so
+        // without a visible bar the screen just sits there looking hung.
+        showProgress('Starting\u2026');
         var index = 0, done = 0, failed = 0, skipped = 0;
         function finish(error) {
             bulkBusy = false;
             button.prop('disabled', false);
+            hideProgress();
             updateBulkSelectionUI();
-            modal(error ? 'Action stopped' : 'Bulk regenerate complete', error || ('Processed: ' + done + '\nSkipped: ' + skipped + '\nFailed: ' + failed));
+            var summary = 'Processed: ' + done + '\nSkipped: ' + skipped + '\nFailed: ' + failed;
+            modal(error ? 'Action stopped' : 'Bulk regenerate complete', error ? error + '\n\n' + summary : summary);
         }
         function next() {
+            if (stopRequested) { finish('Stopped after ' + (done + failed + skipped) + ' of ' + ids.length + ' images.'); return; }
             if (index >= ids.length) { finish(); return; }
             var id = ids[index++];
             progress(done + failed + skipped, ids.length, 'Processing image ' + index + ' of ' + ids.length);
@@ -347,8 +473,12 @@ jQuery(function ($) {
                     updateRowAfterAction(id, res.data || {}, false);
                 } else {
                     failed++;
+                    markRowFailed(id, message(res, 'Processing failed.'));
                 }
-            }).fail(function () { failed++; }).always(function () { setTimeout(next, 900); });
+            }).fail(function (xhr, textStatus) {
+                failed++;
+                markRowFailed(id, failMessage(xhr, textStatus, 'The request did not complete.'));
+            }).always(function () { setTimeout(next, 900); });
         }
         next();
     }
@@ -631,20 +761,51 @@ jQuery(function ($) {
         if (dirty || saving || bulkBusy) { event.preventDefault(); event.originalEvent.returnValue = ''; return ''; }
     });
 
+    // Uploads were processed in complete silence: nothing on screen said the
+    // plugin was working, so alt text simply appeared later, or didn't.
+    function autoStatus(count) {
+        var $chip = $('#altgenix-auto-status');
+        if (!count) { $chip.remove(); return; }
+        if (!$chip.length) {
+            $chip = $('<div id="altgenix-auto-status" class="altgenix-auto-status" role="status" aria-live="polite"></div>').appendTo('body');
+        }
+        $chip.text('AltGenix: generating tags for ' + count + ' image' + (count === 1 ? '' : 's') + '\u2026');
+    }
+    var autoIdleRuns = 0, autoTimer = null;
+    function scheduleAutoQueue() {
+        if (autoStopped || !config.auto_queue) { return; }
+        window.clearTimeout(autoTimer);
+        // 15s while there is work. Once the queue has come back empty a few times it
+        // drops to two minutes — this poll runs for as long as a Media Library tab
+        // stays open, and at a flat 15s that is 240 admin-ajax hits an hour for
+        // nothing on every open tab.
+        autoTimer = window.setTimeout(autoQueue, autoIdleRuns >= 4 ? 120000 : 15000);
+    }
     function autoQueue() {
-        if (!config.auto_queue || autoBusy || bulkBusy || autoStopped || document.hidden) { return; }
+        if (!config.auto_queue || autoStopped) { return; }
+        if (autoBusy || bulkBusy || document.hidden) { scheduleAutoQueue(); return; }
         autoBusy = true;
         request('altgenix_get_auto_queue').done(function (res) {
             var ids = res && res.success && Array.isArray(res.data) ? res.data : [];
             if (!res || !res.success) { autoStopped = true; }
+            autoIdleRuns = ids.length ? 0 : autoIdleRuns + 1;
             function next() {
-                if (!ids.length || bulkBusy) { autoBusy = false; return; }
+                if (!ids.length || bulkBusy) { autoBusy = false; autoStatus(0); scheduleAutoQueue(); return; }
+                autoStatus(ids.length);
                 request('altgenix_process_auto', { image_id: ids.shift() }).always(function () { setTimeout(next, 1200); });
             }
             next();
-        }).fail(function (xhr) { if (xhr.status === 403) { autoStopped = true; } autoBusy = false; });
+        }).fail(function (xhr) {
+            if (xhr.status === 403) { autoStopped = true; }
+            autoBusy = false; autoIdleRuns++; autoStatus(0); scheduleAutoQueue();
+        });
     }
-    if (config.auto_queue) { autoQueue(); setInterval(autoQueue, 15000); }
+    if (config.auto_queue) {
+        // Coming back to a tab that was hidden should feel immediate rather than
+        // waiting out whatever backoff had built up while nobody was looking.
+        $(document).on('visibilitychange', function () { if (!document.hidden) { autoIdleRuns = 0; autoQueue(); } });
+        autoQueue();
+    }
 
     function progress(done, total, text) {
         var percent = total ? Math.min(100, Math.round(done / total * 100)) : 0;
@@ -652,18 +813,38 @@ jQuery(function ($) {
         $('#altgenix-progress-percentage').text(percent + '%');
         $('#altgenix-progress-status').text(text);
     }
+    // Set by the Stop button and read between images. An in-flight request is
+    // always allowed to finish — aborting one mid-write is how an image ends up
+    // paid for at the provider and unrecorded here.
+    var stopRequested = false;
+    function showProgress(text) {
+        stopRequested = false;
+        $('#altgenix-stop-run').prop('disabled', false).text('Stop');
+        $('#altgenix-progress-container').show();
+        progress(0, 1, text || 'Starting\u2026');
+    }
+    function hideProgress() {
+        $('#altgenix-progress-container').hide();
+        progress(0, 1, '');
+    }
+    $(document).on('click', '#altgenix-stop-run', function () {
+        if (!bulkBusy) { return; }
+        stopRequested = true;
+        $(this).prop('disabled', true).text('Stopping\u2026');
+    });
     function runBulk(button) {
         if (bulkBusy) { return; }
         bulkBusy = true; button.prop('disabled', true);
-        $('#altgenix-progress-container').show();
+        showProgress('Reading the queue\u2026');
         var cursor = 0, done = 0, failed = 0, skipped = 0, total = 0;
         function finish(error) {
             bulkBusy = false; button.prop('disabled', false);
+            hideProgress();
             var summary = done + ' processed, ' + failed + ' failed, ' + skipped + ' skipped.';
-            progress(done + failed + skipped, total, error || summary);
-            modal(error ? 'Bulk processing stopped' : 'Bulk run complete', (error ? error + '\n' : '') + summary + '\nRefresh the list to see current statuses. Failed images remain retryable.');
+            modal(error ? 'Bulk processing stopped' : 'Bulk run complete', (error ? error + '\n' : '') + summary + '\nFailed images remain retryable. Refresh to see images on other pages.');
         }
         function batch() {
+            if (stopRequested) { finish('Stopped after ' + (done + failed + skipped) + ' images.'); return; }
             request('altgenix_get_pending', { after_id: cursor }).done(function (res) {
                 if (!res || !res.success || !res.data || !Array.isArray(res.data.ids)) { finish(message(res, 'Could not fetch pending images.')); return; }
                 var ids = res.data.ids;
@@ -672,15 +853,25 @@ jQuery(function ($) {
                 if (!res.data.next_cursor || res.data.next_cursor <= cursor) { finish('The queue did not advance. Please refresh and retry.'); return; }
                 cursor = res.data.next_cursor;
                 function next() {
+                    if (stopRequested) { finish('Stopped after ' + (done + failed + skipped) + ' of ' + total + ' images.'); return; }
                     if (!ids.length) { batch(); return; }
                     progress(done + failed + skipped, total, 'Processing image ' + (done + failed + skipped + 1) + ' of ' + total);
-                    request('altgenix_process_image', { image_id: ids.shift() }).done(function (result) {
-                        if (result && result.success) { if (result.data && result.data.status === 'skipped') { skipped++; } else { done++; } }
-                        else { failed++; }
-                    }).fail(function () { failed++; }).always(function () { setTimeout(next, 1200); });
+                    var currentId = ids.shift();
+                    request('altgenix_process_image', { image_id: currentId }).done(function (result) {
+                        if (result && result.success) {
+                            if (result.data && result.data.status === 'skipped') { skipped++; } else { done++; }
+                            updateRowAfterAction(currentId, result.data || {}, false);
+                        } else {
+                            failed++;
+                            markRowFailed(currentId, message(result, 'Processing failed.'));
+                        }
+                    }).fail(function (xhr, textStatus) {
+                        failed++;
+                        markRowFailed(currentId, failMessage(xhr, textStatus, 'The request did not complete.'));
+                    }).always(function () { setTimeout(next, 1200); });
                 }
                 next();
-            }).fail(function (xhr) { finish(message(xhr, 'Connection failed while reading the queue.')); });
+            }).fail(function (xhr, textStatus) { finish(failMessage(xhr, textStatus, 'Could not read the queue.')); });
         }
         batch();
     }
@@ -732,12 +923,16 @@ jQuery(function ($) {
                 : buildProcessPayload(id, modalData);
             button.prop('disabled', true); icon.attr('class', 'dashicons dashicons-update altgenix-spin');
             request(renameRetry ? 'altgenix_rename_existing' : 'altgenix_process_image', payload).done(function (res) {
-                if (!res || !res.success) { modal('Processing error', message(res, 'The action failed.')); return; }
-                toast(message(res, 'Image updated.'));
+                if (!res || !res.success) { markRowFailed(id, message(res, 'The action failed.')); modal('Processing error', message(res, 'The action failed.')); return; }
+                toast(processToastText(res));
                 if (window.wp && wp.media && wp.media.attachment) { wp.media.attachment(id).fetch(); }
                 updateRowAfterAction(id, res.data || {}, false);
                 if (renameRetry) { button.remove(); }
-            }).fail(function (xhr) { modal('Processing error', message(xhr, 'Connection failed. Refresh your login if the session expired.')); })
+            }).fail(function (xhr, textStatus) {
+                var text = failMessage(xhr, textStatus, 'The action did not complete.');
+                markRowFailed(id, text);
+                modal('Processing error', text);
+            })
                 .always(function () { button.prop('disabled', false); icon.attr('class', original); updateBulkSelectionUI(); });
         }
         modal(
@@ -759,7 +954,12 @@ jQuery(function ($) {
             var value = $(this).data('rating');
             $('.altgenix-star-rating').data('selected', value);
             $('.altgenix-star-rating span').each(function () { $(this).toggleClass('dashicons-star-filled', $(this).data('rating') <= value).toggleClass('dashicons-star-empty', $(this).data('rating') > value); });
-            $('#altgenix-rating-feedback, .altgenix-rating-low, .altgenix-rating-high').show();
+            // These two blocks are alternatives, not a pair. Showing both asked a
+            // five-star rater to "tell us what went wrong".
+            var wantsFix = value <= 3;
+            $('#altgenix-rating-feedback').show();
+            $('.altgenix-rating-low').toggle(wantsFix);
+            $('.altgenix-rating-high').toggle(!wantsFix);
         });
     $('#altgenix-submit-feedback').on('click', function () {
         var button = $(this), text = $('#altgenix-feedback-text').val().trim();
@@ -767,9 +967,19 @@ jQuery(function ($) {
         button.prop('disabled', true);
         request('altgenix_submit_feedback', { feedback: text, rating: $('.altgenix-star-rating').data('selected') || 3 }).done(function (res) {
             if (res && res.success) { toast('Feedback sent.'); $('#altgenix-feedback-text').val(''); }
-            else { toast(message(res, 'Feedback was not sent. Your text is still here.'), true); }
+            else {
+                var support = res && res.data && res.data.support ? { href: res.data.support, label: 'Open the support forum' } : null;
+                toast(message(res, 'Feedback was not sent. Your text is still here.'), true, support);
+            }
         }).fail(function (xhr) { toast(message(xhr, 'Feedback was not sent. Please try the support forum.'), true); }).always(function () { button.prop('disabled', false); });
     });
     $('#altgenix-review-link').on('click', function () { request('altgenix_record_review', { rating: $('.altgenix-star-rating').data('selected') || 3 }); });
-    $('#altgenix-rate-again').on('click', function () { $('#altgenix-already-rated').hide(); $('#altgenix-rating-card').show(); });
+    $('#altgenix-rate-again').on('click', function () {
+        $('#altgenix-already-rated').hide();
+        $('#altgenix-rating-card').show();
+        // Reopening kept the previous stars lit and both follow-up blocks open.
+        $('.altgenix-star-rating').removeData('selected');
+        $('.altgenix-star-rating span').addClass('dashicons-star-empty').removeClass('dashicons-star-filled');
+        $('#altgenix-rating-feedback, .altgenix-rating-low, .altgenix-rating-high').hide();
+    });
 });
