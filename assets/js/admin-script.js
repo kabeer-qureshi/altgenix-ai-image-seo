@@ -58,7 +58,9 @@ jQuery(function ($) {
             return 'The request took too long and was cut off. The image may still have been processed \u2014 refresh the list before retrying.';
         }
         if (xhr && xhr.status === 403) {
-            return 'Your session has expired or the permission was withdrawn. Reload this page and sign in again.';
+            // The plugin's own 403s explain themselves ("You are not allowed to edit
+            // this image"); only a bare nonce failure means the session is stale.
+            return message(xhr, '') || 'Your session has expired or the permission was withdrawn. Reload this page and sign in again.';
         }
         if (xhr && xhr.status === 0) {
             return 'The connection to this site dropped before the request finished.';
@@ -213,7 +215,17 @@ jQuery(function ($) {
     $(document).on('keydown', '.altgenix-tip', function (event) {
         if (event.key === 'Escape') { $(this).trigger('blur'); }
     });
-    function markDirty() { dirty = true; revision++; $('#altgenix-save-state').prop('hidden', false); }
+    // "Unsaved" means the form differs from what was last saved, not "something was
+    // touched". A plain flag stayed set after a change was undone — switching the
+    // provider just to remove a key, then back again, still blocked leaving the page.
+    var savedSnapshot = null;
+    function formSnapshot() { return form.length ? form.serialize() : ''; }
+    function setClean() { savedSnapshot = formSnapshot(); dirty = false; $('#altgenix-save-state').prop('hidden', true); }
+    function markDirty() {
+        revision++;
+        dirty = savedSnapshot === null || formSnapshot() !== savedSnapshot;
+        $('#altgenix-save-state').prop('hidden', !dirty);
+    }
 
     if (config.bulk_url && !$('#altgenix-media-shortcut').length) {
         var shortcut = $('<a id="altgenix-media-shortcut" class="page-title-action"></a>').attr('href', config.bulk_url).text('Optimize with AltGenix');
@@ -318,7 +330,9 @@ jQuery(function ($) {
         });
         $menu.on('click', '.altgenix-select-option:not(.disabled)', function (event) {
             event.preventDefault(); event.stopPropagation();
-            $select.val($(this).attr('data-value')).trigger('change');
+            // Picking the option that is already selected is not a change.
+            var picked = $(this).attr('data-value');
+            if ($select.val() !== picked) { $select.val(picked).trigger('change'); }
             closeCustomSelect($wrapper, true);
         }).on('keydown', '.altgenix-select-option:not(.disabled)', function (event) {
             var $items = $menu.children('.altgenix-select-option:not(.disabled)');
@@ -378,9 +392,11 @@ jQuery(function ($) {
         url.searchParams.set('paged', '1');
         window.location.href = url.toString();
     });
-    $('#altgenix-apply-filter').on('click', function () {
+    // Applies on change, like the per-page control. A separate Filter button was
+    // one more click for nothing.
+    $('#altgenix-status-filter').on('change', function () {
         var url = new URL(window.location.href);
-        url.searchParams.set('altgenix_status', $('#altgenix-status-filter').val());
+        url.searchParams.set('altgenix_status', $(this).val());
         url.searchParams.set('paged', '1');
         window.location.href = url.toString();
     });
@@ -391,8 +407,8 @@ jQuery(function ($) {
         var ids = selectedImageIds();
         var count = ids.length;
         var total = $('.altgenix-row-select').length;
-        $('#altgenix-bulk-regenerate-btn').prop('disabled', !count || bulkBusy).find('.altgenix-bulk-btn-label').text('Regenerate Selected (' + count + ')');
-        $('#altgenix-mark-processed-btn').prop('disabled', !count || bulkBusy).find('.altgenix-bulk-btn-label').text('Mark Selected as Processed (' + count + ')');
+        $('#altgenix-bulk-regenerate-btn').prop('disabled', !count || bulkBusy).find('.altgenix-bulk-btn-label').text('Regenerate selected (' + count + ')');
+        $('#altgenix-mark-processed-btn').prop('disabled', !count || bulkBusy).find('.altgenix-bulk-btn-label').text('Mark as done (' + count + ')');
         $('#altgenix-select-all').prop('checked', !!count && count === total).prop('indeterminate', !!count && count < total);
     }
     $(document).on('change', '#altgenix-select-all', function () {
@@ -406,6 +422,11 @@ jQuery(function ($) {
         var words = $.trim(String(text || '')).split(/\s+/);
         return words.length <= limit ? words.join(' ') : words.slice(0, limit).join(' ') + '\u2026';
     }
+    function showAlt($cell, alt) {
+        if (alt) { $cell.text(trimWords(alt, 10)).attr('title', alt); }
+        else { $cell.text('No alt text').removeAttr('title'); }
+        $cell.css('cursor', '');
+    }
     function updateRowAfterAction(id, response, forceProcessed) {
         var $row = $('tr[data-image-id="' + id + '"]');
         if (!$row.length) { return; }
@@ -417,11 +438,81 @@ jQuery(function ($) {
         // processed exactly like 'success' does, so the badge has to follow.
         if (forceProcessed || status === 'success' || status === 'fallback') {
             $badge.removeClass('altgenix-badge-warning altgenix-badge-danger').addClass('altgenix-badge-success').text('Processed');
-            // Without this the row reads "Processed" beside "Awaiting Action...".
-            if (response && response.item_title) {
-                $detail.text(trimWords(response.item_title, 10)).attr('title', response.item_title).css('cursor', '');
-            }
+            // The column shows alt text; a row that was Failed still shows its error until this runs.
+            if (response && typeof response.item_alt === 'string') { showAlt($detail, response.item_alt); }
             if ($row.find('.altgenix-regenerate-btn').attr('data-ai-mode') === '0') { $row.find('.altgenix-regenerate-btn').remove(); }
+        }
+    }
+    // "Process all remaining (N)" must not keep advertising work that is already done.
+    // Asked from the server once an action finishes, because a failed regenerate can
+    // put an image back in the queue and the browser cannot tell every case apart.
+    function setRemaining(count) {
+        var $button = $('#altgenix-auto-tag-btn');
+        if (!$button.length) { return; }
+        count = Math.max(0, parseInt(count, 10) || 0);
+        $button.attr('data-count', count).find('.altgenix-bulk-btn-label')
+            .text(count ? 'Process all remaining (' + count + ')' : 'Nothing left to process');
+        if (!bulkBusy) { $button.prop('disabled', !count); }
+    }
+    function refreshRemaining() {
+        if (!$('#altgenix-auto-tag-btn').length) { return; }
+        request('altgenix_remaining_count').done(function (res) {
+            if (res && res.success && res.data) { setRemaining(res.data.remaining); }
+        });
+    }
+    function fieldListText(fields) {
+        var names = [];
+        if (fields.alt) { names.push('alt text'); }
+        if (fields.title) { names.push('title'); }
+        if (fields.caption) { names.push('caption'); }
+        if (fields.description) { names.push('description'); }
+        if (names.length < 2) { return names.join(''); }
+        return names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
+    }
+    function plural(count, word) { return count + ' ' + word + (count === 1 ? '' : 's'); }
+    function runSummary(done, failed, skipped) {
+        var parts = [done + ' processed'];
+        if (failed) { parts.push(failed + ' failed'); }
+        if (skipped) { parts.push(skipped + ' skipped'); }
+        return parts.join(', ') + '.' + (failed ? '\nFailed images stay in the list so you can retry them.' : '');
+    }
+    function regenerateText(aiMode) {
+        return aiMode
+            ? 'Pick the fields to rewrite. Text already in those fields will be replaced. Each image is one request to your AI provider.'
+            : 'Pick the fields to rewrite from the filename. Text already in those fields will be replaced.';
+    }
+    // WordPress saves a field edited in the media modal when it loses focus — and
+    // clicking our button is what takes the focus. If that save is still in flight
+    // when the regenerate starts, it can land second and put the old text back
+    // (seen in browser testing: the toast said success, the old alt text stayed).
+    // Wait for open requests to finish first, but never longer than five seconds.
+    function whenIdle(callback) {
+        var waited = 0;
+        (function check() {
+            if (!$.active || waited >= 5000) { callback(); return; }
+            waited += 100;
+            window.setTimeout(check, 100);
+        })();
+    }
+    // After a run, put the new text into whichever edit form is open. The classic
+    // attachment screen otherwise keeps the text it loaded with, and pressing Update
+    // writes that back over the run. The media modal re-renders itself only for
+    // title and caption changes, so alt text and description would look unchanged.
+    function applySavedFields(button, id, fields) {
+        if (!fields || typeof fields !== 'object') { return; }
+        if ($('body').hasClass('post-type-attachment') && String($('#post_ID').val()) === String(id)) {
+            var targets = { title: '#title', alt: '#attachment_alt', caption: '#attachment_caption', description: '#attachment_content' };
+            $.each(targets, function (key, selector) {
+                if (typeof fields[key] === 'string') { $(selector).val(fields[key]); }
+            });
+            if (typeof fields.title === 'string') { $('#title-prompt-text').toggleClass('screen-reader-text', fields.title !== ''); }
+        }
+        var $scope = button.closest('.attachment-details');
+        if (!$scope.length) { $scope = button.closest('.media-sidebar'); }
+        if ($scope.length) {
+            $.each(['title', 'alt', 'caption', 'description'], function (_, key) {
+                if (typeof fields[key] === 'string') { $scope.find('[data-setting="' + key + '"]').find('input, textarea').val(fields[key]); }
+            });
         }
     }
     // A failed image used to sit there still saying "Pending", which reads as
@@ -458,8 +549,9 @@ jQuery(function ($) {
             button.prop('disabled', false);
             hideProgress();
             updateBulkSelectionUI();
-            var summary = 'Processed: ' + done + '\nSkipped: ' + skipped + '\nFailed: ' + failed;
-            modal(error ? 'Action stopped' : 'Bulk regenerate complete', error ? error + '\n\n' + summary : summary);
+            refreshRemaining();
+            var summary = runSummary(done, failed, skipped);
+            modal(error ? 'Run stopped' : 'Regenerate complete', error ? error + '\n\n' + summary : summary);
         }
         function next() {
             if (stopRequested) { finish('Stopped after ' + (done + failed + skipped) + ' of ' + ids.length + ' images.'); return; }
@@ -473,7 +565,7 @@ jQuery(function ($) {
                     updateRowAfterAction(id, res.data || {}, false);
                 } else {
                     failed++;
-                    markRowFailed(id, message(res, 'Processing failed.'));
+                    if (!(res && res.data && res.data.still_processed)) { markRowFailed(id, message(res, 'Processing failed.')); }
                 }
             }).fail(function (xhr, textStatus) {
                 failed++;
@@ -532,9 +624,11 @@ jQuery(function ($) {
         var state = matchingModelState();
         $select.empty();
         if (state && state.models && state.models.length) {
-            $select.append($('<option></option>').val('').text('Recommended available model'));
+            // One "automatic" entry instead of two different things both called
+            // "recommended". The list is cheapest first, and Automatic takes the top.
+            $select.append($('<option></option>').val('').text('Automatic (cheapest available)'));
             $.each(state.models, function (index, id) {
-                $select.append($('<option></option>').val(id).text(id + (index === 0 ? ' — recommended' : '')));
+                $select.append($('<option></option>').val(id).text(id));
             });
             var selection = state.models.indexOf(state.selection) >= 0 ? state.selection : '';
             state.selection = selection;
@@ -694,10 +788,10 @@ jQuery(function ($) {
                     if (!dirtyBefore && res.data.switched_to_fallback) {
                         $('#altgenix_mode').val('fallback');
                         refreshCustomSelect($('#altgenix_mode'));
-                        dirty = false;
-                        $('#altgenix-save-state').prop('hidden', true);
                     }
                     syncConditions();
+                    // The server's saved state just changed underneath the form.
+                    if (!dirtyBefore) { setClean(); } else { markDirty(); }
                     toast(res.data.message || 'Saved API key removed.');
                 }).fail(function (xhr) {
                     toast(message(xhr, 'Could not remove the saved API key.'), true);
@@ -712,9 +806,10 @@ jQuery(function ($) {
 
     syncConditions();
     if (form.length) {
+        setClean();
         form.on('input change', 'input, textarea, select', markDirty);
         $(document).on('keydown', function (event) {
-            if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') { event.preventDefault(); form.trigger('submit'); }
+            if ((event.ctrlKey || event.metaKey) && event.key && event.key.toLowerCase() === 's') { event.preventDefault(); form.trigger('submit'); }
         });
         form.on('submit', function (event) {
             event.preventDefault();
@@ -724,7 +819,8 @@ jQuery(function ($) {
                 toast('Enter an API key before enabling AI.', true); markDirty(); return;
             }
             var sentRevision = revision;
-            var data = form.serialize() + '&action=altgenix_save_settings';
+            var sentSnapshot = form.serialize();
+            var data = sentSnapshot + '&action=altgenix_save_settings';
             var button = form.find('[type="submit"]');
             var label = button.text();
             saving = true; button.prop('disabled', true).text('Saving...');
@@ -749,9 +845,15 @@ jQuery(function ($) {
                     $('#altgenix_api_key').val('').attr('type', 'password');
                     $('.altgenix-select').each(function () { refreshCustomSelect($(this)); });
                     $('.altgenix-regenerate-btn').attr('data-rename-default', state.settings.rename_file === 1 ? '1' : '0');
-                    dirty = false; $('#altgenix-save-state').prop('hidden', true);
                 }
                 syncConditions();
+                if (revision === sentRevision) { setClean(); }
+                else {
+                    // Edits made while this save was in flight are still unsaved.
+                    savedSnapshot = sentSnapshot;
+                    dirty = formSnapshot() !== savedSnapshot;
+                    $('#altgenix-save-state').prop('hidden', !dirty);
+                }
                 toast(revision === sentRevision ? state.message : 'Earlier changes saved. You still have unsaved edits.');
             }).fail(function (xhr) { toast(message(xhr, 'Settings could not be saved. Your edits are still here.'), true); markDirty(); })
                 .always(function () { saving = false; button.prop('disabled', false).text(label); });
@@ -769,7 +871,7 @@ jQuery(function ($) {
         if (!$chip.length) {
             $chip = $('<div id="altgenix-auto-status" class="altgenix-auto-status" role="status" aria-live="polite"></div>').appendTo('body');
         }
-        $chip.text('AltGenix: generating tags for ' + count + ' image' + (count === 1 ? '' : 's') + '\u2026');
+        $chip.text('AltGenix: processing ' + count + ' new image' + (count === 1 ? '' : 's') + '\u2026');
     }
     var autoIdleRuns = 0, autoTimer = null;
     function scheduleAutoQueue() {
@@ -840,8 +942,10 @@ jQuery(function ($) {
         function finish(error) {
             bulkBusy = false; button.prop('disabled', false);
             hideProgress();
-            var summary = done + ' processed, ' + failed + ' failed, ' + skipped + ' skipped.';
-            modal(error ? 'Bulk processing stopped' : 'Bulk run complete', (error ? error + '\n' : '') + summary + '\nFailed images remain retryable. Refresh to see images on other pages.');
+            refreshRemaining();
+            var summary = runSummary(done, failed, skipped);
+            if ($('.altgenix-pagination').length) { summary += '\nReload the page to see the results on other pages.'; }
+            modal(error ? 'Run stopped' : 'All done', (error ? error + '\n\n' : '') + summary);
         }
         function batch() {
             if (stopRequested) { finish('Stopped after ' + (done + failed + skipped) + ' images.'); return; }
@@ -879,8 +983,8 @@ jQuery(function ($) {
         var button = $(this), ids = selectedImageIds();
         if (bulkBusy || !ids.length) { return; }
         modal(
-            'Regenerate selected images?',
-            'Choose which fields to regenerate for the selected images. Save any attachment edits first. AI mode may incur provider charges.',
+            'Regenerate ' + plural(ids.length, 'selected image') + '?',
+            regenerateText(button.attr('data-ai-mode') === '1'),
             function (modalData) { runSelectedRegeneration(button, ids, modalData); },
             {
                 showFields: true,
@@ -894,22 +998,40 @@ jQuery(function ($) {
     $('#altgenix-auto-tag-btn').on('click', function () {
         var button = $(this);
         if (bulkBusy || button.prop('disabled')) { return; }
-        modal('Process pending images?', 'This replaces enabled metadata fields for pending and failed images using your saved settings. AI requests may incur provider charges.', function () { runBulk(button); });
+        var count = parseInt(button.attr('data-count'), 10) || 0;
+        var fields = fieldListText(buttonFieldDefaults(button));
+        if (!fields) {
+            modal('Nothing to generate', 'Every field is switched off. Turn on at least one field under Settings > Generation Control.');
+            return;
+        }
+        // Say exactly what will be overwritten and on how many images, in the words
+        // the rest of WordPress uses, before anything is spent.
+        var text = 'AltGenix will write the ' + fields + ' for ' + plural(count, 'image') +
+            ' that ' + (count === 1 ? 'is' : 'are') + ' pending or failed. Text already in those fields will be replaced.\n\n' +
+            (button.attr('data-ai-mode') === '1'
+                ? 'Each image is one request to your AI provider.'
+                : 'The text comes from each filename. No API is used.') +
+            '\n\nWrote some of this text yourself? Tick those images and use “Mark as done” first.';
+        modal('Process all remaining images?', text, function () { runBulk(button); }, { confirmText: 'Start' });
     });
     $('#altgenix-mark-processed-btn').on('click', function () {
         var button = $(this), ids = selectedImageIds();
         if (bulkBusy || !ids.length) { return; }
-        modal('Mark selected images as processed?', 'This marks the checked images as processed without generating any tags. Failed images and queued uploads are skipped.', function () {
+        modal('Mark ' + plural(ids.length, 'image') + ' as done?', 'Their text stays exactly as it is, and they stop being listed as pending. Use this for images you have already written yourself, or ones that keep failing. Images still being uploaded are skipped.', function () {
             bulkBusy = true;
             button.prop('disabled', true);
             request('altgenix_mark_selected_processed', { image_ids: ids }).done(function (res) {
                 if (!res || !res.success || !res.data) { modal('Action stopped', message(res, 'Could not update statuses.')); return; }
-                $.each((res.data.updated_ids || []), function (_, id) { updateRowAfterAction(id, {}, true); $('tr[data-image-id="' + id + '"]').find('.altgenix-row-select').prop('checked', false); });
+                var alts = res.data.updated_alts || {};
+                $.each((res.data.updated_ids || []), function (_, id) {
+                    updateRowAfterAction(id, { item_alt: typeof alts[id] === 'string' ? alts[id] : undefined }, true);
+                    $('tr[data-image-id="' + id + '"]').find('.altgenix-row-select').prop('checked', false);
+                });
                 updateBulkSelectionUI();
-                modal('Status updated', res.data.count + ' images marked as processed.' + (res.data.skipped ? '\nSkipped: ' + res.data.skipped : ''));
+                toast(plural(res.data.count, 'image') + ' marked as done.' + (res.data.skipped ? ' ' + res.data.skipped + ' skipped (already done or still uploading).' : ''));
             }).fail(function (xhr) { modal('Action stopped', message(xhr, 'Connection failed.')); })
-              .always(function () { bulkBusy = false; button.prop('disabled', false); updateBulkSelectionUI(); });
-        });
+              .always(function () { bulkBusy = false; button.prop('disabled', false); updateBulkSelectionUI(); refreshRemaining(); });
+        }, { confirmText: 'Mark as done' });
     });
     $(document).on('click', '.altgenix-regenerate-btn, .altgenix-rename-btn', function () {
         var button = $(this), id = button.data('id'), renameRetry = button.hasClass('altgenix-rename-btn');
@@ -922,9 +1044,17 @@ jQuery(function ($) {
                 ? { attachment_id: id, delete_old: modalData && modalData.deleteOld ? 1 : 0 }
                 : buildProcessPayload(id, modalData);
             button.prop('disabled', true); icon.attr('class', 'dashicons dashicons-update altgenix-spin');
-            request(renameRetry ? 'altgenix_rename_existing' : 'altgenix_process_image', payload).done(function (res) {
-                if (!res || !res.success) { markRowFailed(id, message(res, 'The action failed.')); modal('Processing error', message(res, 'The action failed.')); return; }
+            whenIdle(function () { request(renameRetry ? 'altgenix_rename_existing' : 'altgenix_process_image', payload).done(function (res) {
+                if (!res || !res.success) {
+                    var errorText = message(res, 'The action failed.');
+                    // An image that already had good text keeps it; only this attempt failed.
+                    if (res && res.data && res.data.still_processed) { errorText += '\n\nThe image keeps its previous text and stays processed.'; }
+                    else { markRowFailed(id, errorText); }
+                    modal('Processing error', errorText);
+                    return;
+                }
                 toast(processToastText(res));
+                applySavedFields(button, id, res.data && res.data.fields);
                 if (window.wp && wp.media && wp.media.attachment) { wp.media.attachment(id).fetch(); }
                 updateRowAfterAction(id, res.data || {}, false);
                 if (renameRetry) { button.remove(); }
@@ -933,13 +1063,13 @@ jQuery(function ($) {
                 markRowFailed(id, text);
                 modal('Processing error', text);
             })
-                .always(function () { button.prop('disabled', false); icon.attr('class', original); updateBulkSelectionUI(); });
+                .always(function () { button.prop('disabled', false); icon.attr('class', original); updateBulkSelectionUI(); refreshRemaining(); }); });
         }
         modal(
-            renameRetry ? 'Retry this filename?' : 'Regenerate image fields?',
+            renameRetry ? 'Retry this filename?' : 'Regenerate this image?',
             renameRetry
-                ? 'Retry the previously generated filename without making another AI request.'
-                : 'Choose which fields to regenerate for this image. Save any attachment edits first. AI mode may incur provider charges.',
+                ? 'Applies the filename the AI already wrote for this image. No new AI request is made.'
+                : regenerateText(aiMode),
             run,
             renameRetry
                 ? { showDeleteOld: true, confirmText: 'Retry rename' }

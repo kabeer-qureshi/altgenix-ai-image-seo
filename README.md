@@ -17,8 +17,8 @@ filename, or from Google Gemini, OpenAI, Anthropic Claude or DeepSeek using your
 
 ## What it does
 
-- **Two modes.** *Original Filename* rewrites `red-car-front.jpg` into readable text with no API
-  calls and no cost. *AI Smart Generator* sends the image to the provider you choose.
+- **Two modes.** *Filename* rewrites `red-car-front.jpg` into readable text with no API calls
+  and no cost. *AI* sends the image to the provider you choose, using your own key.
 - **Four providers**, each with your own key: Google Gemini, OpenAI, Anthropic Claude, DeepSeek.
   You pick the model; models are listed cheapest first.
 - **Per-field control.** Alt text, title, caption and description are enabled separately, each
@@ -27,7 +27,8 @@ filename, or from Google Gemini, OpenAI, Anthropic Claude or DeepSeek using your
   a stop button, and per-image status.
 - **Failures stay retryable.** A provider error never overwrites metadata you wrote yourself, and
   the image stays in the Failed list instead of being marked done.
-- **Optional file renaming** that copies rather than moves, so existing embeds keep working.
+- **Optional file renaming** that copies rather than moves, so existing embeds keep working —
+  responsive sizes included.
 
 ## Requirements
 
@@ -153,6 +154,22 @@ does not turn already-optimized media back into a queue.
 
 ## Changelog
 
+### 1.2.2
+
+- On the attachment edit screen, pressing **Update** after generating no longer puts the old title
+  and alt text back.
+- Typing in the Media Library popup and clicking Generate straight away no longer lets the typed
+  text overwrite the generated text.
+- Renaming a file no longer breaks images already placed in posts: their `srcset`, width and height
+  stay intact. Deleting a renamed image now also removes the older copies the plugin kept.
+- **Remove Key** really removes the key, and saving settings no longer shows a false error.
+- A failed regeneration no longer sends an already processed image back into the paid queue, and
+  **Mark as done** now accepts failed images.
+- Gemini models are asked for the least thinking they allow; Claude 5 models are listed.
+- Clearer wording throughout: *Filename (free, no API key)* and *AI (uses your API key)*,
+  *Process all remaining*, *Regenerate selected* and *Mark as done* with live counts, and an
+  *Automatic (cheapest available)* model choice.
+
 ### 1.2.1
 
 Fixes two regressions introduced in 1.2.0:
@@ -169,12 +186,6 @@ a rows-per-page control, the queue table scrolls on narrow screens, the settings
 the tab you left, disabled buttons look disabled, notifications clear the Save button and can be
 dismissed, timeouts are reported as timeouts, rename results are reported, tooltips open on keyboard
 focus, dialogs close on a backdrop click, and automatic processing says what it is doing.
-
-### 1.2.0
-
-DeepSeek added as a fourth provider. Model selection with cost ordering, image downscaling before
-upload, per-provider size and format limits, safer file renaming, batched migration of old error
-placeholders, and a large set of security and data-safety fixes.
 
 **[Full changelog for every release →](readme.txt)**
 

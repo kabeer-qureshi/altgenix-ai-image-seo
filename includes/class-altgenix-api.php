@@ -240,12 +240,17 @@ class ALTGENIX_API {
     private function request_model( $model, $prompt, $image, $mime ) {
         $headers = array( 'Content-Type' => 'application/json' );
         $json_retry = in_array( $this->provider, array( 'gemini', 'deepseek' ), true );
-        foreach ( $json_retry ? array( true, false ) : array( true ) as $json_mode ) {
+        $json_mode  = true;
+        $thinking   = $this->provider === 'gemini' ? self::gemini_thinking_config( $model ) : array();
+        // Up to three shapes: as configured, then without a rejected thinking setting,
+        // then without JSON mode. Each fallback happens only on the matching 400.
+        for ( $attempt = 0; $attempt < 3; $attempt++ ) {
             if ( $this->provider === 'gemini' ) {
                 $url = 'https://generativelanguage.googleapis.com/v1beta/models/' . rawurlencode( $model ) . ':generateContent';
                 $headers['x-goog-api-key'] = $this->api_key;
                 $payload = array( 'contents' => array( array( 'parts' => array( array( 'text' => $prompt ), array( 'inlineData' => array( 'mimeType' => $mime, 'data' => $image ) ) ) ) ), 'generationConfig' => array( 'maxOutputTokens' => 4096 ) );
                 if ( $json_mode ) { $payload['generationConfig']['responseMimeType'] = 'application/json'; }
+                if ( $thinking ) { $payload['generationConfig']['thinkingConfig'] = $thinking; }
             } elseif ( $this->provider === 'claude' ) {
                 $url = 'https://api.anthropic.com/v1/messages';
                 $headers['x-api-key'] = $this->api_key;
@@ -262,7 +267,9 @@ class ALTGENIX_API {
             $code = (int) wp_remote_retrieve_response_code( $response );
             $data = json_decode( wp_remote_retrieve_body( $response ), true );
             $message = isset( $data['error']['message'] ) && is_string( $data['error']['message'] ) ? $data['error']['message'] : 'Provider request failed (HTTP ' . $code . ').';
-            if ( $json_retry && $json_mode && $code === 400 && preg_match( '/json|response_?mime|response_format/i', $message ) ) { continue; }
+            // Checked first, so a model that refuses the thinking setting does not also lose JSON mode.
+            if ( $thinking && $code === 400 && preg_match( '/thinking/i', $message ) ) { $thinking = array(); continue; }
+            if ( $json_retry && $json_mode && $code === 400 && preg_match( '/json|response_?mime|response_format/i', $message ) ) { $json_mode = false; continue; }
             if ( $code !== 200 ) {
                 $error_code = in_array( $code, array( 429, 500, 502, 503, 504, 529 ), true ) ? 'altgenix_busy' : ( $code === 404 ? 'altgenix_model_unavailable' : 'altgenix_api' );
                 return new WP_Error( $error_code, self::redact_error( $message, $this->api_key ) );
@@ -300,6 +307,31 @@ class ALTGENIX_API {
             return new WP_Error( 'altgenix_empty', 'The provider returned no usable text. Existing metadata was preserved.' );
         }
         return new WP_Error( 'altgenix_response', 'Provider rejected the metadata request.' );
+    }
+
+    /**
+     * The least thinking each Gemini model allows.
+     *
+     * Describing one image needs no reasoning. Thinking tokens are billed as output
+     * and share maxOutputTokens with the answer, so a long think costs money and can
+     * cut the JSON off mid-way — a failed image that was still paid for. Values from
+     * Google's generateContent thinking guide (Sep 2026):
+     * - Gemini 3.x: thinkingLevel "low" is accepted by every Flash and Pro model
+     *   ("minimal" is rejected by some). Flash-Lite already defaults to minimal, so
+     *   it is left alone.
+     * - Gemini 2.5: Flash turns thinking off with a budget of 0; Pro cannot turn it
+     *   off and 128 is its minimum; Flash-Lite does not think unless asked.
+     * - Anything older does not think.
+     */
+    public static function gemini_thinking_config( $model ) {
+        if ( ! is_string( $model ) || ! preg_match( '/^gemini-(\d+)(?:\.(\d+))?-(flash-lite|flash|pro)(?:-|$)/', $model, $m ) ) { return array(); }
+        $major  = (int) $m[1];
+        $minor  = isset( $m[2] ) && $m[2] !== '' ? (int) $m[2] : 0;
+        $family = $m[3];
+        if ( $major >= 3 ) { return $family === 'flash-lite' ? array() : array( 'thinkingLevel' => 'low' ); }
+        if ( $major === 2 && $minor === 5 && $family === 'flash' ) { return array( 'thinkingBudget' => 0 ); }
+        if ( $major === 2 && $minor === 5 && $family === 'pro' ) { return array( 'thinkingBudget' => 128 ); }
+        return array();
     }
 
     private function post_with_retry( $url, $args ) {
@@ -341,7 +373,10 @@ class ALTGENIX_API {
             return (bool) preg_match( '/^gemini-\d+(?:\.\d+)?-(?:flash|pro)(?:-|$)/', $id ) &&
                 ! preg_match( '/(?:^|-)(?:image|imagen|tts|audio|speech|live|embedding|veo|video|robotics|computer)(?:-|$)/', $id );
         }
-        if ( $provider === 'claude' ) { return (bool) preg_match( '/^claude-(?:haiku|sonnet|opus)-4(?:-|$)/', $id ); }
+        // Claude 4 and every later generation (claude-sonnet-5, claude-opus-5-5, ...).
+        // Pinning to "-4" hid newer, often cheaper models and would have left the
+        // provider with nothing once the 4.x models retire.
+        if ( $provider === 'claude' ) { return (bool) preg_match( '/^claude-(?:haiku|sonnet|opus)-(?:[4-9]|[1-9]\d)(?:-|$)/', $id ); }
         return in_array( $id, self::default_models( $provider ), true );
     }
 

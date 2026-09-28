@@ -85,6 +85,15 @@ class ALTGENIX_Settings {
         }
         $clean['api_key'] = $key;
         if ( $key !== '' ) { $clean['provider_keys'][ $provider ] = $key; }
+        // Store keys in the same order get_settings() rebuilds them in. A key added
+        // for a provider earlier in the list used to be appended at the end, and the
+        // strict comparison in ajax_save_settings() then reported a successful save
+        // as "Could not persist settings".
+        $ordered_keys = array();
+        foreach ( ALTGENIX_API::supported_providers() as $supported ) {
+            if ( isset( $clean['provider_keys'][ $supported ] ) ) { $ordered_keys[ $supported ] = $clean['provider_keys'][ $supported ]; }
+        }
+        $clean['provider_keys'] = $ordered_keys;
         $candidate = $clean;
         $candidate['api_key'] = $key;
         if ( $key !== '' ) { $candidate['provider_keys'][ $provider ] = $key; }
@@ -173,24 +182,24 @@ class ALTGENIX_Settings {
             if ( strpos( $hook, 'altgenix-settings' ) !== false ) {
                 $options = ALTGENIX_Core::get_settings();
                 $config['saved_keys'] = array_map( function ( $key ) { return $key !== ''; }, $options['provider_keys'] );
-                $config['verified'] = $options['mode'] === 'ai' && $options['api_key'] !== '' && (bool) ALTGENIX_API::verified_models( $options );
+                // Not tied to the current mode: a page opened in Filename mode must still
+                // know the saved key's models, or switching to AI shows "Verify API key
+                // to load models" for a key that is already verified.
+                $config['verified'] = $options['api_key'] !== '' && (bool) ALTGENIX_API::verified_models( $options );
             }
         }
         // Secrets never cross into page source or localized JavaScript, even for admins.
         wp_localize_script( 'altgenix-admin-script', 'altgenix_ajax', $config );
     }
 
-    public function filter_pending_where( $where ) {
-        global $wpdb;
-        // Releases up to 1.1.2 stored provider failures in post_content. New failures use
-        // private post meta, but keep old rows out of Pending until the one-time
-        // migration has lifted them out. Same strict prefix the migration matches on.
-        $where .= $wpdb->prepare( " AND {$wpdb->posts}.post_content NOT LIKE %s", 'AI Error: %' );
-        return $where;
-    }
-
     /** How many legacy rows one admin page load is allowed to convert. */
     private const LEGACY_MIGRATION_BATCH = 50;
+
+    /**
+     * The data version this release's migration brings a site to. Not the plugin
+     * version: it only moves when stored data has to change.
+     */
+    private const DATA_VERSION = '1.2.2';
 
     /**
      * Does this description look like something an earlier release wrote, rather than something
@@ -225,6 +234,12 @@ class ALTGENIX_Settings {
      * still tell a plugin placeholder apart from real content — so nothing later in
      * the plugin ever has to guess, or edit post_content again.
      *
+     * 1.2.0 and 1.2.1 shipped this migration without the emptying step: the error was
+     * copied to meta but the text stayed in the Description, where attachment pages
+     * and galleries still showed it. Rows those releases examined carry
+     * `_altgenix_legacy_skipped` = '1', so this pass reads them once more. Every row
+     * this pass has examined is marked '2'.
+     *
      * Runs in small batches across page loads: a site with thousands of failed rows
      * must not turn one admin request into a timeout, and the version marker is only
      * written once there is genuinely nothing left, so an interrupted run resumes
@@ -234,34 +249,35 @@ class ALTGENIX_Settings {
         if ( ! current_user_can( 'manage_options' ) ) { return; }
 
         $data_version = (string) get_option( 'altgenix_data_version', '0' );
-        if ( version_compare( $data_version, '1.2.0', '>=' ) ) { return; }
+        if ( version_compare( $data_version, self::DATA_VERSION, '>=' ) ) { return; }
 
         global $wpdb;
         $like = $wpdb->esc_like( 'AI Error: ' ) . '%';
 
-        // Rows already examined and left alone are excluded, otherwise a batch full
+        // Rows this pass has already examined are excluded, otherwise a batch full
         // of them would be re-read on every page load and the migration would never
         // reach the end.
         // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
         $rows = $wpdb->get_results(
             $wpdb->prepare(
-                "SELECT p.ID, p.post_content
+                "SELECT p.ID, p.post_content, pm.meta_value AS examined
                    FROM {$wpdb->posts} p
                    LEFT JOIN {$wpdb->postmeta} pm
                      ON pm.post_id = p.ID AND pm.meta_key = %s
                   WHERE p.post_type = 'attachment'
                     AND p.post_content LIKE %s
-                    AND pm.post_id IS NULL
+                    AND ( pm.post_id IS NULL OR pm.meta_value <> %s )
                   LIMIT %d",
                 '_altgenix_legacy_skipped',
                 $like,
+                '2',
                 self::LEGACY_MIGRATION_BATCH
             )
         );
 
         if ( ! is_array( $rows ) ) { return; }
         if ( empty( $rows ) ) {
-            update_option( 'altgenix_data_version', '1.2.0', false );
+            update_option( 'altgenix_data_version', self::DATA_VERSION, false );
             return;
         }
 
@@ -274,17 +290,22 @@ class ALTGENIX_Settings {
             if ( ! $this->looks_like_legacy_error( $content ) ) {
                 // Somebody's own words. Leave them alone — but mark the row so the
                 // next batch moves past it instead of reading it forever.
-                update_post_meta( $attachment_id, '_altgenix_legacy_skipped', '1' );
+                update_post_meta( $attachment_id, '_altgenix_legacy_skipped', '2' );
                 continue;
             }
 
-            if ( ! metadata_exists( 'post', $attachment_id, '_altgenix_error' ) ) {
-                $message = substr( $content, strlen( 'AI Error: ' ) );
-                update_post_meta( $attachment_id, '_altgenix_error', sanitize_text_field( $message ) );
+            // A row an earlier release already migrated has its error in meta, and may
+            // have been regenerated successfully since. Only its Description is left.
+            if ( empty( $row->examined ) ) {
+                if ( ! metadata_exists( 'post', $attachment_id, '_altgenix_error' ) ) {
+                    $message = substr( $content, strlen( 'AI Error: ' ) );
+                    update_post_meta( $attachment_id, '_altgenix_error', sanitize_text_field( $message ) );
+                }
+                delete_post_meta( $attachment_id, '_altgenix_processed' );
             }
 
-            delete_post_meta( $attachment_id, '_altgenix_processed' );
-            update_post_meta( $attachment_id, '_altgenix_legacy_skipped', '1' );
+            wp_update_post( array( 'ID' => $attachment_id, 'post_content' => '' ) );
+            update_post_meta( $attachment_id, '_altgenix_legacy_skipped', '2' );
         }
     }
 
@@ -394,10 +415,16 @@ class ALTGENIX_Settings {
     public function add_edit_media_button() {
         global $post;
         if ( ! $post || ! current_user_can( 'upload_files' ) || ! current_user_can( 'edit_post', $post->ID ) || ! wp_attachment_is_image( $post->ID ) ) return;
-        $options = get_option('altgenix_settings', array());
-        $mode = isset($options['mode']) ? $options['mode'] : 'fallback';
-        $btn_text = $mode === 'ai' ? 'Auto-Generate AI Tags' : 'Generate Tags (Filename)';
-        $desc_text = $mode === 'ai' ? 'Click to let AI analyze and auto-fill Alt Text, Title, Caption, and Description.' : 'Click to auto-fill tags using the original filename.';
+        $options = ALTGENIX_Core::get_settings();
+        $mode = $options['mode'];
+        $btn_text = $mode === 'ai' ? 'Generate with AI' : 'Generate from filename';
+        // Name the fields that will actually be written, not all four regardless.
+        $fields = $this->enabled_fields_sentence( $options );
+        if ( $fields === '' ) {
+            $desc_text = 'Every field is switched off in AltGenix AI > Settings > Generation Control.';
+        } else {
+            $desc_text = $mode === 'ai' ? 'Writes the ' . $fields . ' using AI. You choose the fields before it runs.' : 'Writes the ' . $fields . ' from the filename. You choose the fields before it runs.';
+        }
         ?>
         <div class="misc-pub-section misc-pub-altgenix" style="padding-top: 15px; border-top: 1px solid #dcdcde; margin-top: 10px;">
             <button type="button" class="button button-primary button-large altgenix-regenerate-btn altgenix-media-btn altgenix-media-btn-block" data-id="<?php echo esc_attr( $post->ID ); ?>" data-ai-mode="<?php echo $mode === 'ai' ? '1' : '0'; ?>" data-can-rename="<?php echo current_user_can( 'manage_options' ) ? '1' : '0'; ?>" data-rename-default="<?php echo ! empty( $options['rename_file'] ) ? '1' : '0'; ?>" <?php echo $this->generation_button_data_attributes( $options ); ?>>
@@ -410,10 +437,10 @@ class ALTGENIX_Settings {
 
     public function add_media_modal_button( $form_fields, $post ) {
         if ( ! $post || ! current_user_can( 'upload_files' ) || ! current_user_can( 'edit_post', $post->ID ) || ! wp_attachment_is_image( $post->ID ) ) return $form_fields;
-        $options = get_option('altgenix_settings', array());
-        $mode = isset($options['mode']) ? $options['mode'] : 'fallback';
-        $label_text = $mode === 'ai' ? 'AI Image SEO' : 'Image SEO';
-        $btn_text = $mode === 'ai' ? 'Auto-Generate Tags' : 'Generate (Filename)';
+        $options = ALTGENIX_Core::get_settings();
+        $mode = $options['mode'];
+        $label_text = 'AltGenix';
+        $btn_text = $mode === 'ai' ? 'Generate with AI' : 'Generate from filename';
         
         $form_fields['altgenix_generate'] = array(
             'label' => $label_text,
@@ -479,7 +506,17 @@ class ALTGENIX_Settings {
             update_option( 'altgenix_valid_models', array(), false );
             update_option( 'altgenix_models_context', ALTGENIX_API::context( $provider, '' ), false );
         }
+        // update_option() runs sanitize(), which rebuilds the keys from the saved
+        // settings and reads a blank key as "keep the saved one" — so the removal was
+        // silently undone while this handler reported success. $options came from
+        // get_settings() and only lost entries, so it is marked as already clean.
+        $this->last_sanitized = $options;
         update_option( 'altgenix_settings', $options, false );
+        $this->last_sanitized = null;
+        $check = ALTGENIX_Core::get_settings();
+        if ( isset( $check['provider_keys'][ $provider ] ) ) {
+            wp_send_json_error( array( 'message' => 'The saved API key could not be removed. Please reload the page and try again.' ) );
+        }
         delete_transient( $this->verification_preview_key() );
 
         $present = array_map( function ( $saved ) { return $saved !== ''; }, $options['provider_keys'] );
@@ -556,12 +593,12 @@ class ALTGENIX_Settings {
                             <label>Processing Mode
                                 <span class="altgenix-tip">
                                     <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
-                                    <div class="altgenix-tip-content">Select how you want to generate tags. "Original Filename" converts your file name (e.g. red-car.jpg) into text.</div>
+                                    <div class="altgenix-tip-content">Where the text comes from. <strong>Filename</strong> turns red-car.jpg into "Red Car" &mdash; free, no account needed. <strong>AI</strong> sends the image to the provider you choose below and describes what is in it.</div>
                                 </span>
                             </label>
                             <select name="altgenix_settings[mode]" id="altgenix_mode" class="altgenix-select" style="width: 100%; max-width: 400px;">
-                                <option value="fallback" <?php selected($mode, 'fallback'); ?>>Original Filename (No API - Fast)</option>
-                                <option value="ai" <?php selected($mode, 'ai'); ?>>AI Smart Generator (Uses API)</option>
+                                <option value="fallback" <?php selected($mode, 'fallback'); ?>>Filename (free, no API key)</option>
+                                <option value="ai" <?php selected($mode, 'ai'); ?>>AI (uses your API key)</option>
                             </select>
                         </div>
 
@@ -597,22 +634,20 @@ class ALTGENIX_Settings {
                                 <span class="dashicons dashicons-info-outline" style="font-size: 16px; margin-top:2px;"></span>
                                 Don't have an API key? <a href="https://aistudio.google.com/app/apikey" id="altgenix_key_help_link" target="_blank" style="text-decoration: none; font-weight: 500;">Get your API key here</a>.
                             </p>
-                            <p class="description">A blank field keeps the saved key. Enter a new key to replace it.</p>
                         </div>
 
                         <div class="altgenix-form-row" id="altgenix_model_row" style="<?php echo $mode === 'fallback' ? 'display:none;' : ''; ?>">
                             <label>AI Model
                                 <span class="altgenix-tip">
                                     <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
-                                    <div class="altgenix-tip-content">Models are ordered by a preferred model family. The first available model is the default; check provider pricing before a large run &mdash; only move up if you are not happy with the descriptions you are getting.</div>
+                                    <div class="altgenix-tip-content">Models are listed cheapest first, and Automatic uses the first one. Pick a larger model only if the descriptions are not good enough &mdash; it costs more per image.</div>
                                 </span>
                             </label>
                             <div class="altgenix-model-control">
                                 <select name="altgenix_settings[model]" id="altgenix_model" class="altgenix-select" style="width: 100%; max-width: 400px;" <?php disabled( empty( $valid_models ) ); ?>>
-                                    <option value="" <?php selected( $chosen_model, '' ); ?>><?php echo esc_html( empty( $valid_models ) ? __( 'Verify API key to load models', 'altgenix-ai-image-seo' ) : __( 'Recommended available model', 'altgenix-ai-image-seo' ) ); ?></option>
-                                    <?php foreach ( $valid_models as $index => $model_id ) {
-                                        $suffix = ( $index === 0 ) ? ' — recommended' : '';
-                                        echo '<option value="' . esc_attr( $model_id ) . '" ' . selected( $chosen_model, $model_id, false ) . '>' . esc_html( $model_id . $suffix ) . '</option>';
+                                    <option value="" <?php selected( $chosen_model, '' ); ?>><?php echo esc_html( empty( $valid_models ) ? __( 'Verify API key to load models', 'altgenix-ai-image-seo' ) : __( 'Automatic (cheapest available)', 'altgenix-ai-image-seo' ) ); ?></option>
+                                    <?php foreach ( $valid_models as $model_id ) {
+                                        echo '<option value="' . esc_attr( $model_id ) . '" ' . selected( $chosen_model, $model_id, false ) . '>' . esc_html( $model_id ) . '</option>';
                                     } ?>
                                 </select>
                                 <button type="button" id="altgenix-verify-models" class="altgenix-btn-secondary altgenix-verify-models-btn"><span class="dashicons dashicons-update" aria-hidden="true"></span><span>Verify &amp; Refresh Models</span></button>
@@ -621,16 +656,16 @@ class ALTGENIX_Settings {
                         </div>
 
                         <div class="altgenix-form-row" id="altgenix_escalation_row" style="<?php echo empty( $valid_models ) || $mode === 'fallback' ? 'display:none;' : ''; ?>">
-                            <label>If the model is busy
+                            <label>Try another model when busy
                                 <span class="altgenix-tip">
                                     <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
                                     <div class="altgenix-tip-content">
-                                        <strong>Off (recommended):</strong> briefly retries a busy model. If it still fails, existing metadata is preserved and the image stays retryable.<br>
-                                        <strong>On:</strong> permits up to two alternative available models after a busy or unavailable model. Alternatives may cost more; review provider pricing first.
+                                        <strong>Off (recommended):</strong> retries the same model for a few seconds. If it is still busy, the image is marked Failed, nothing is changed, and you can retry it later.<br>
+                                        <strong>On:</strong> may move on to up to two other models from the list. Those can cost more per image.
                                     </div>
                                 </span>
                             </label>
-                            <label class="altgenix-switch" style="margin-top: 4px;"><input type="checkbox" name="altgenix_settings[allow_escalation]" value="1" <?php checked(1, $allow_escalation); ?>><span class="altgenix-slider"></span></label>
+                            <label class="altgenix-switch" style="margin-top: 4px;"><input type="checkbox" name="altgenix_settings[allow_escalation]" value="1" aria-label="Try another model when busy" <?php checked(1, $allow_escalation); ?>><span class="altgenix-slider"></span></label>
                         </div>
 
                         <div class="altgenix-form-row altgenix-form-row-wide" id="altgenix_lang_row" <?php if($mode === 'fallback') echo 'style="display:none;"'; ?>>
@@ -653,18 +688,22 @@ class ALTGENIX_Settings {
                 <div class="altgenix-tab-content" id="tab-controls" role="tabpanel" aria-labelledby="tab-controls-label">
                     <div class="altgenix-card">
                         <h3>Generation Control</h3>
-                        <label><input type="checkbox" name="altgenix_settings[auto_upload]" value="1" <?php checked( 1, $options['auto_upload'] ); ?>> Automatically process new uploads</label>
-                        <p class="description">Turn ON the fields you want to automatically generate when an image is uploaded.</p>
+                        <p class="description">Choose which fields AltGenix writes. The same choices are used for new uploads and for &ldquo;Process all remaining&rdquo;, and they come pre-ticked when you regenerate a single image.</p>
                         <table class="form-table altgenix-control-table">
                             <tbody>
+                                <tr>
+                                    <th scope="row">Process New Uploads</th>
+                                    <td><label class="altgenix-switch"><input type="checkbox" name="altgenix_settings[auto_upload]" value="1" aria-label="Process new uploads automatically" <?php checked( 1, $options['auto_upload'] ); ?>><span class="altgenix-slider"></span></label></td>
+                                    <td><em style="color:#6c757d;">Runs automatically a few seconds after each image finishes uploading.</em></td>
+                                </tr>
                                 <tr id="altgenix_rename_file_row" <?php if($mode === 'fallback') echo 'style="display:none;"'; ?>>
-                                    <th scope="row">Rename Physical File</th>
-                                    <td><label class="altgenix-switch"><input type="checkbox" name="altgenix_settings[rename_file]" value="1" <?php checked(1, $rename_file); ?>><span class="altgenix-slider"></span></label></td>
-                                    <td><em style="color:#6c757d;">Uses a new filename for new AI uploads. Old files are retained for existing links, using additional disk space.</em></td>
+                                    <th scope="row">Rename File</th>
+                                    <td><label class="altgenix-switch"><input type="checkbox" name="altgenix_settings[rename_file]" value="1" aria-label="Rename new uploads" <?php checked(1, $rename_file); ?>><span class="altgenix-slider"></span></label></td>
+                                    <td><em style="color:#6c757d;">Gives new uploads a descriptive filename written by the AI. The old files are kept so existing links keep working, which uses extra disk space.</em></td>
                                 </tr>
                                 <tr>
                                     <th scope="row">Generate Alt Text</th>
-                                    <td><label class="altgenix-switch"><input type="checkbox" name="altgenix_settings[gen_alt]" value="1" <?php checked(1, $gen_alt); ?>><span class="altgenix-slider"></span></label></td>
+                                    <td><label class="altgenix-switch"><input type="checkbox" name="altgenix_settings[gen_alt]" value="1" aria-label="Generate alt text" <?php checked(1, $gen_alt); ?>><span class="altgenix-slider"></span></label></td>
                                     <td class="altgenix-length-col" <?php if($mode === 'fallback') echo 'style="display:none;"'; ?>>
                                         <select name="altgenix_settings[alt_length]" class="altgenix-select">
                                             <?php foreach($lengths as $val => $label) { echo '<option value="'.esc_attr($val).'" '.selected(isset($options['alt_length'])?$options['alt_length']:'medium', $val, false).'>'.esc_html($label).'</option>'; } ?>
@@ -673,7 +712,7 @@ class ALTGENIX_Settings {
                                 </tr>
                                 <tr>
                                     <th scope="row">Generate Title</th>
-                                    <td><label class="altgenix-switch"><input type="checkbox" name="altgenix_settings[gen_title]" value="1" <?php checked(1, $gen_title); ?>><span class="altgenix-slider"></span></label></td>
+                                    <td><label class="altgenix-switch"><input type="checkbox" name="altgenix_settings[gen_title]" value="1" aria-label="Generate title" <?php checked(1, $gen_title); ?>><span class="altgenix-slider"></span></label></td>
                                     <td class="altgenix-length-col" <?php if($mode === 'fallback') echo 'style="display:none;"'; ?>>
                                         <select name="altgenix_settings[title_length]" class="altgenix-select">
                                             <?php foreach($lengths as $val => $label) { echo '<option value="'.esc_attr($val).'" '.selected(isset($options['title_length'])?$options['title_length']:'short', $val, false).'>'.esc_html($label).'</option>'; } ?>
@@ -682,7 +721,7 @@ class ALTGENIX_Settings {
                                 </tr>
                                 <tr>
                                     <th scope="row">Generate Caption</th>
-                                    <td><label class="altgenix-switch"><input type="checkbox" name="altgenix_settings[gen_caption]" value="1" <?php checked(1, $gen_caption); ?>><span class="altgenix-slider"></span></label></td>
+                                    <td><label class="altgenix-switch"><input type="checkbox" name="altgenix_settings[gen_caption]" value="1" aria-label="Generate caption" <?php checked(1, $gen_caption); ?>><span class="altgenix-slider"></span></label></td>
                                     <td class="altgenix-length-col" <?php if($mode === 'fallback') echo 'style="display:none;"'; ?>>
                                         <select name="altgenix_settings[caption_length]" class="altgenix-select">
                                             <?php foreach($lengths as $val => $label) { echo '<option value="'.esc_attr($val).'" '.selected(isset($options['caption_length'])?$options['caption_length']:'short', $val, false).'>'.esc_html($label).'</option>'; } ?>
@@ -691,7 +730,7 @@ class ALTGENIX_Settings {
                                 </tr>
                                 <tr>
                                     <th scope="row">Generate Description</th>
-                                    <td><label class="altgenix-switch"><input type="checkbox" name="altgenix_settings[gen_desc]" value="1" <?php checked(1, $gen_desc); ?>><span class="altgenix-slider"></span></label></td>
+                                    <td><label class="altgenix-switch"><input type="checkbox" name="altgenix_settings[gen_desc]" value="1" aria-label="Generate description" <?php checked(1, $gen_desc); ?>><span class="altgenix-slider"></span></label></td>
                                     <td class="altgenix-length-col" <?php if($mode === 'fallback') echo 'style="display:none;"'; ?>>
                                         <select name="altgenix_settings[desc_length]" class="altgenix-select">
                                             <?php foreach($lengths as $val => $label) { echo '<option value="'.esc_attr($val).'" '.selected(isset($options['desc_length'])?$options['desc_length']:'medium', $val, false).'>'.esc_html($label).'</option>'; } ?>
@@ -711,7 +750,7 @@ class ALTGENIX_Settings {
                             <textarea id="altgenix_custom_prompt" name="altgenix_settings[custom_prompt]" class="regular-text" rows="4" style="width: 100%; max-width: 600px;" placeholder="E.g., Keep it professional. Use brand name 'Acme Corp'. Focus on e-commerce aspects." <?php echo $mode === 'fallback' ? 'readonly' : ''; ?>><?php echo esc_textarea( $custom_prompt ); ?></textarea>
                             <p class="description">Add extra instructions for the AI to follow when generating text. (AI Mode only)</p>
                             <div id="altgenix_prompt_fallback_warning" style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 10px 14px; margin-top: 10px; border-radius: 4px; <?php if ( $mode !== 'fallback' ) echo 'display:none;'; ?>">
-                                <p style="margin: 0; color: #856404; font-size: 13px;"><strong>⚠️ Custom Prompt is inactive.</strong> You are currently in <strong>Original Filename</strong> mode — the AI is not being called, so this prompt has no effect. Switch to <strong>AI Smart Generator</strong> mode in the General tab for this to work.</p>
+                                <p style="margin: 0; color: #856404; font-size: 13px;"><strong>⚠️ Not used in Filename mode.</strong> This prompt is only sent to the AI. To use it, set Processing Mode to <strong>AI</strong> on the General Settings tab.</p>
                             </div>
                             <div style="background: #e8f4fd; border-left: 4px solid #0288d1; padding: 10px 14px; margin-top: 10px; border-radius: 4px; <?php if ( $mode === 'fallback' ) echo 'display:none;'; ?>" class="altgenix-ai-only-row">
                                 <p style="margin: 0; color: #01579b; font-size: 13px;">💡 <strong>Tip:</strong> If your custom prompt asks for specific details (brand names, product categories, etc.), set the field lengths to <strong>Medium</strong> or <strong>Long</strong> in the Generation Control tab — <em>Short (1-5 words)</em> may be too restrictive for the AI to follow your instructions.</p>
@@ -729,6 +768,19 @@ class ALTGENIX_Settings {
             </form>
         </div>
         <?php
+    }
+
+    /**
+     * "alt text and title", "alt text, title and caption", or '' when all are off.
+     */
+    private function enabled_fields_sentence( $options ) {
+        $names = array();
+        foreach ( array( 'gen_alt' => 'alt text', 'gen_title' => 'title', 'gen_caption' => 'caption', 'gen_desc' => 'description' ) as $key => $name ) {
+            if ( ! empty( $options[ $key ] ) ) { $names[] = $name; }
+        }
+        if ( count( $names ) < 2 ) { return implode( '', $names ); }
+        $last = array_pop( $names );
+        return implode( ', ', $names ) . ' and ' . $last;
     }
 
     private function generation_button_data_attributes( $options ) {
@@ -751,14 +803,14 @@ class ALTGENIX_Settings {
      *
      * Ten was hardcoded, and since a selection only covers the rows on screen that
      * put a hard ceiling of ten images on every "Regenerate Selected". The whole
-     * library is still the Auto-Tag button's job; this is for working through a
+     * library is still the "Process all remaining" button's job; this is for working through a
      * known set by hand.
      */
     private const PER_PAGE_CHOICES = array( 10, 25, 50, 100 );
 
     public function create_bulk_optimizer_page() {
-        $options = get_option( 'altgenix_settings', array() );
-        $mode = isset( $options['mode'] ) ? $options['mode'] : 'fallback';
+        $options = ALTGENIX_Core::get_settings();
+        $mode = $options['mode'];
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended
         $status_filter = isset( $_GET['altgenix_status'] ) && is_string( $_GET['altgenix_status'] ) ? sanitize_text_field( wp_unslash( $_GET['altgenix_status'] ) ) : 'all';
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended
@@ -778,13 +830,13 @@ class ALTGENIX_Settings {
             <div class="altgenix-card altgenix-table-card">
                 <div class="altgenix-table-toolbar">
                     <div class="altgenix-table-filters">
-                        <select id="altgenix-status-filter" class="altgenix-select">
-                            <option value="all" <?php selected($status_filter, 'all'); ?>>All Status</option>
+                        <?php // Applies on change, like the per-page control beside it. ?>
+                        <select id="altgenix-status-filter" class="altgenix-select" aria-label="Show images by status">
+                            <option value="all" <?php selected($status_filter, 'all'); ?>>All images</option>
                             <option value="pending" <?php selected($status_filter, 'pending'); ?>>Pending</option>
                             <option value="processed" <?php selected($status_filter, 'processed'); ?>>Processed</option>
                             <option value="failed" <?php selected($status_filter, 'failed'); ?>>Failed</option>
                         </select>
-                        <button id="altgenix-apply-filter" class="altgenix-btn-outline" style="margin-left: 10px;">Filter</button>
                         <select id="altgenix-per-page" class="altgenix-select altgenix-per-page" aria-label="Images per page">
                             <?php foreach ( self::PER_PAGE_CHOICES as $choice ) {
                                 /* translators: %d: number of rows shown per page. */
@@ -795,43 +847,32 @@ class ALTGENIX_Settings {
                     
                     <?php 
                     $supported_mimes = ALTGENIX_Core::queue_mime_types();
-                    $total_images_query = new WP_Query( array( 'post_type' => 'attachment', 'post_mime_type' => $supported_mimes, 'post_status' => 'inherit', 'posts_per_page' => 1 ) );
+                    $total_images_query = new WP_Query( array( 'post_type' => 'attachment', 'post_mime_type' => $supported_mimes, 'post_status' => 'inherit', 'posts_per_page' => 1, 'fields' => 'ids', 'no_found_rows' => true ) );
                     
-                    // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query
-                    // Matches what the bulk run will actually work through, failed
-                    // images included — otherwise the button switches itself off
-                    // while there is still work it would happily retry.
-                    $pending_check_query = new WP_Query( array(
-                        'post_type'      => 'attachment',
-                        'post_mime_type' => $supported_mimes,
-                        'post_status'    => 'inherit',
-                        'posts_per_page' => 1,
-                        'meta_query'     => array(
-                            array( 'key' => '_altgenix_processed', 'compare' => 'NOT EXISTS' ),
-                        ),
-                    ) );
-
                     $has_images = $total_images_query->have_posts();
-                    $has_pending = $pending_check_query->have_posts();
-                    wp_reset_postdata();
-                    // Reset both queries — though only wp_reset_postdata() for the global $post
-                    // is needed, explicitly unsetting avoids keeping stale query objects in scope.
-                    unset( $total_images_query, $pending_check_query );
+                    // Shown on the button, so nobody has to guess how big a run is
+                    // before starting it. Pending and failed together, as the run is —
+                    // otherwise the button switches itself off while there is still
+                    // work it would happily retry.
+                    $remaining_count = ALTGENIX_Core::remaining_count();
+                    $has_pending = $remaining_count > 0;
+                    unset( $total_images_query );
 
                     if ( $has_images ) :
                         $button_data = $this->generation_button_data_attributes( $options );
                     ?>
                         <div class="altgenix-bulk-actions">
                             <div class="altgenix-bulk-actions-buttons">
-                                <button id="altgenix-bulk-regenerate-btn" class="altgenix-btn-primary" disabled title="Generate selected fields for the checked images." data-ai-mode="<?php echo $mode === 'ai' ? '1' : '0'; ?>" data-can-rename="<?php echo current_user_can( 'manage_options' ) ? '1' : '0'; ?>" data-rename-default="<?php echo ! empty( $options['rename_file'] ) ? '1' : '0'; ?>" <?php echo $button_data; ?>>
-                                    <span class="dashicons dashicons-update"></span> <span class="altgenix-bulk-btn-label">Regenerate Selected (0)</span>
+                                <?php // The one action most visitors came for leads, and says how big it is. ?>
+                                <button id="altgenix-auto-tag-btn" class="altgenix-btn-primary" <?php disabled( ! $has_pending ); ?> data-count="<?php echo esc_attr( $remaining_count ); ?>" data-ai-mode="<?php echo $mode === 'ai' ? '1' : '0'; ?>" <?php echo $button_data; ?> title="Generate text for every image that is pending or failed, using your saved settings."><span class="dashicons dashicons-update"></span> <span class="altgenix-bulk-btn-label"><?php echo esc_html( $has_pending ? sprintf( 'Process all remaining (%d)', $remaining_count ) : 'Nothing left to process' ); ?></span></button>
+                                <button id="altgenix-bulk-regenerate-btn" class="altgenix-btn-secondary" disabled title="Choose fields and regenerate them for the checked images." data-ai-mode="<?php echo $mode === 'ai' ? '1' : '0'; ?>" data-can-rename="<?php echo current_user_can( 'manage_options' ) ? '1' : '0'; ?>" data-rename-default="<?php echo ! empty( $options['rename_file'] ) ? '1' : '0'; ?>" <?php echo $button_data; ?>>
+                                    <span class="dashicons dashicons-image-rotate"></span> <span class="altgenix-bulk-btn-label">Regenerate selected (0)</span>
                                 </button>
-                                <button id="altgenix-auto-tag-btn" class="altgenix-btn-secondary" <?php disabled( ! $has_pending ); ?> title="Generate tags for all pending and failed images using your saved settings."><span class="dashicons dashicons-update"></span> Auto-Tag Pending</button>
-                                <button id="altgenix-mark-processed-btn" class="altgenix-btn-outline" disabled title="Mark the checked images as processed without generating tags.">
-                                    <span class="dashicons dashicons-yes"></span> <span class="altgenix-bulk-btn-label">Mark Selected as Processed (0)</span>
+                                <button id="altgenix-mark-processed-btn" class="altgenix-btn-outline" disabled title="Keep the checked images as they are and stop listing them as pending.">
+                                    <span class="dashicons dashicons-yes"></span> <span class="altgenix-bulk-btn-label">Mark as done (0)</span>
                                 </button>
                             </div>
-                            <div class="altgenix-bulk-actions-help">Select one or more images to regenerate chosen fields or mark them as processed.</div>
+                            <div class="altgenix-bulk-actions-help">Tick images in the table to regenerate them, or to mark ones you have already written as done.</div>
                         </div>
                     <?php endif; ?>
                 </div>
@@ -853,7 +894,7 @@ class ALTGENIX_Settings {
                 <?php // Seven columns do not fit a phone. Scrolling the table beats breaking the page. ?>
                 <div class="altgenix-table-scroll">
                 <table class="altgenix-table">
-                    <thead><tr><th class="altgenix-col-select"><input type="checkbox" id="altgenix-select-all" aria-label="Select all visible images"></th><th>Image</th><th>File Name</th><th>Title / Error</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead>
+                    <thead><tr><th class="altgenix-col-select"><input type="checkbox" id="altgenix-select-all" aria-label="Select all visible images"></th><th>Image</th><th>File Name</th><th>Alt Text</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead>
                     <tbody>
                         <?php
                         $args = array( 'post_type' => 'attachment', 'post_mime_type' => $supported_mimes, 'post_status' => 'inherit', 'posts_per_page' => $per_page, 'paged' => $paged );
@@ -884,12 +925,16 @@ class ALTGENIX_Settings {
                                     $error = preg_replace( '/^AI Error:\s*/i', '', ltrim( $desc ), 1 );
                                 }
                                 $thumb = wp_get_attachment_image( $id, array(40, 40) );
-                                $title = get_the_title();
-                                
-                                $title_attr = '';
+                                // Alt text is what this plugin is for, and on a pending row it
+                                // shows at a glance whether someone already wrote it by hand
+                                // before "Process all remaining" replaces it.
+                                $alt = (string) get_post_meta( $id, '_wp_attachment_image_alt', true );
+                                $alt_text = $alt !== '' ? wp_trim_words( $alt, 10 ) : 'No alt text';
+
+                                $title_attr = $alt !== '' ? ' title="' . esc_attr( wp_strip_all_tags( $alt ) ) . '"' : '';
                                 if ( $error !== '' ) { $stat = 'Failed'; $bg = 'altgenix-badge-danger'; $text = wp_trim_words( $error, 8 ); $title_attr = ' title="' . esc_attr( wp_strip_all_tags( $error ) ) . '" style="cursor: help;"'; }
-                                elseif ( $is_processed ) { $stat = 'Processed'; $bg = 'altgenix-badge-success'; $text = wp_trim_words($title, 10); $title_attr = ' title="' . esc_attr( wp_strip_all_tags( $title ) ) . '"'; }
-                                else { $stat = 'Pending'; $bg = 'altgenix-badge-warning'; $text = 'Awaiting Action...'; }
+                                elseif ( $is_processed ) { $stat = 'Processed'; $bg = 'altgenix-badge-success'; $text = $alt_text; }
+                                else { $stat = 'Pending'; $bg = 'altgenix-badge-warning'; $text = $alt_text; }
                                 ?>
                                 <tr data-image-id="<?php echo esc_attr( $id ); ?>">
                                     <td class="altgenix-col-select"><?php if ( current_user_can( 'edit_post', $id ) ) : ?><input type="checkbox" class="altgenix-row-select" value="<?php echo esc_attr( $id ); ?>" aria-label="Select image <?php echo esc_attr( wp_basename( get_attached_file( $id ) ) ); ?>"><?php endif; ?></td>
@@ -898,21 +943,31 @@ class ALTGENIX_Settings {
                                     <?php // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- $title_attr is assembled from esc_attr() above. ?>
                                     <td class="altgenix-text-muted"<?php echo $title_attr; ?>><?php echo esc_html( $text ); ?></td>
                                     <td><span class="altgenix-badge altgenix-status-badge <?php echo esc_attr( $bg ); ?>"><?php echo esc_html( $stat ); ?></span></td>
-                                    <td><?php echo esc_html( get_the_date( 'M j' ) ); ?></td>
+                                    <td><?php echo esc_html( get_the_date( 'M j, Y' ) ); ?></td>
                                     <td>
                                         <?php $show_regenerate = current_user_can( 'edit_post', $id ) && ! ( $mode === 'fallback' && $is_processed ); ?>
                                         <?php if ( $show_regenerate ) : ?>
-                                            <button class="altgenix-action-icon altgenix-regenerate-btn" data-id="<?php echo esc_attr($id); ?>" data-ai-mode="<?php echo $mode === 'ai' ? '1' : '0'; ?>" data-can-rename="<?php echo current_user_can( 'manage_options' ) ? '1' : '0'; ?>" data-rename-default="<?php echo ! empty( $options['rename_file'] ) ? '1' : '0'; ?>" <?php echo $this->generation_button_data_attributes( $options ); ?> title="<?php echo ( $mode === 'fallback' ) ? 'Generate Tags' : 'Regenerate AI Tags'; ?>"><span class="dashicons dashicons-image-rotate"></span></button>
+                                            <button class="altgenix-action-icon altgenix-regenerate-btn" data-id="<?php echo esc_attr($id); ?>" data-ai-mode="<?php echo $mode === 'ai' ? '1' : '0'; ?>" data-can-rename="<?php echo current_user_can( 'manage_options' ) ? '1' : '0'; ?>" data-rename-default="<?php echo ! empty( $options['rename_file'] ) ? '1' : '0'; ?>" <?php echo $this->generation_button_data_attributes( $options ); ?> title="<?php echo ( $mode === 'fallback' ) ? 'Generate from filename' : 'Regenerate with AI'; ?>" aria-label="<?php echo ( $mode === 'fallback' ) ? 'Generate from filename' : 'Regenerate with AI'; ?>"><span class="dashicons dashicons-image-rotate" aria-hidden="true"></span></button>
                                         <?php endif; ?>
                                         <?php if ( $pending_filename && $mode === 'ai' && current_user_can( 'manage_options' ) && current_user_can( 'edit_post', $id ) ) : ?>
-                                            <button class="altgenix-action-icon altgenix-rename-btn" data-id="<?php echo esc_attr($id); ?>" title="Retry saved filename (no AI request)"><span class="dashicons dashicons-update"></span></button>
+                                            <button class="altgenix-action-icon altgenix-rename-btn" data-id="<?php echo esc_attr($id); ?>" title="Retry saved filename (no AI request)" aria-label="Retry saved filename (no AI request)"><span class="dashicons dashicons-update" aria-hidden="true"></span></button>
                                         <?php endif; ?>
-                                        <a href="<?php echo esc_url( get_edit_post_link( $id ) ); ?>" target="_blank" class="altgenix-action-icon" title="Edit Image"><span class="dashicons dashicons-edit"></span></a>
+                                        <a href="<?php echo esc_url( get_edit_post_link( $id ) ); ?>" target="_blank" class="altgenix-action-icon" title="Edit image (opens in a new tab)" aria-label="Edit image (opens in a new tab)"><span class="dashicons dashicons-edit" aria-hidden="true"></span></a>
                                     </td>
                                 </tr>
                                 <?php
                             endwhile;
-                        else : echo '<tr class="altgenix-empty-row"><td colspan="7" style="text-align:center; padding: 30px; color: #6c757d;">No images found.</td></tr>'; endif;
+                        else :
+                            // "No images found" on the Pending filter reads like an error;
+                            // there it is the good news.
+                            $empty_messages = array(
+                                'pending'   => 'Nothing pending. Every image has been processed.',
+                                'processed' => 'No processed images yet.',
+                                'failed'    => 'No failed images.',
+                            );
+                            $empty_text = isset( $empty_messages[ $status_filter ] ) ? $empty_messages[ $status_filter ] : 'No images in the Media Library yet.';
+                            echo '<tr class="altgenix-empty-row"><td colspan="7" style="text-align:center; padding: 30px; color: #6c757d;">' . esc_html( $empty_text ) . '</td></tr>';
+                        endif;
                         ?>
                     </tbody>
                 </table>
@@ -1177,12 +1232,13 @@ class ALTGENIX_Settings {
 
             <div class="altgenix-card" style="max-width: 600px; margin: 40px auto;">
                 <h3>Need a hand?</h3>
-                <p class="description" style="margin-bottom: 15px;">Most problems come down to the API key or the AI provider. If something is not working, these are the quickest places to look.</p>
+                <p class="description" style="margin-bottom: 15px;">If something is not working, these are the quickest places to look.</p>
                 <ul style="margin: 0 0 5px 18px; list-style: disc; line-height: 1.9;">
-                    <li>Images not being tagged? Open <strong>Settings</strong> and confirm Processing Mode is set to <em>AI Smart Generator</em> and the key shows as verified.</li>
-                    <li>Seeing "AI Provider Error"? That message comes straight from the AI provider — usually an expired key or an account with no remaining credit.</li>
-                    <li>Descriptions in the wrong language? Set <strong>Output Language</strong> explicitly instead of leaving it on Auto-detect.</li>
-                    <li>Still stuck? <a href="<?php echo esc_url( self::SUPPORT_URL ); ?>" target="_blank" rel="noopener">Ask on the support forum</a> — please include your AI provider and what the error said.</li>
+                    <li>Nothing happens after an upload? Check that <strong>Process New Uploads</strong> is on in <strong>Settings &gt; Generation Control</strong>. New uploads are handled a few seconds later in the background.</li>
+                    <li>Using AI? The <strong>Settings</strong> screen should show <em>Key verified</em> under AI Model, and your provider account needs credit.</li>
+                    <li>An image shows <strong>Failed</strong>? Hover over its error in the <strong>Bulk Optimizer</strong>. Words like &ldquo;key&rdquo;, &ldquo;quota&rdquo;, &ldquo;balance&rdquo; or &ldquo;rate limit&rdquo; mean the message came from your AI provider.</li>
+                    <li>Text in the wrong language? Set <strong>Output Language</strong> explicitly instead of leaving it on Auto-detect.</li>
+                    <li>Still stuck? <a href="<?php echo esc_url( self::SUPPORT_URL ); ?>" target="_blank" rel="noopener">Ask on the support forum</a> and include your AI provider and the exact error.</li>
                 </ul>
             </div>
 

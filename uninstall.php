@@ -26,10 +26,11 @@ function altgenix_uninstall_site() {
     foreach ( array( '_altgenix_auto', '_altgenix_error', '_altgenix_legacy_error', '_altgenix_rename_error', '_altgenix_pending_filename', '_altgenix_old_filename' ) as $key ) {
         delete_post_meta_by_key( $key );
     }
-    // _altgenix_processed, _altgenix_filename_slug, _altgenix_legacy_skipped and
-    // _altgenix_file_backups intentionally remain. Published embeds may still use
-    // retained backup URLs, and the history markers prevent accidental reprocessing
-    // or repeat renames after a reinstall.
+    // _altgenix_processed, _altgenix_filename_slug, _altgenix_legacy_skipped,
+    // _altgenix_file_backups and _altgenix_previous_meta intentionally remain.
+    // Published embeds may still use retained backup URLs (and get their srcset back
+    // from the previous metadata on a reinstall), and the history markers prevent
+    // accidental reprocessing or repeat renames after a reinstall.
 }
 
 if ( is_multisite() ) {

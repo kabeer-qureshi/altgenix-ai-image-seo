@@ -4,7 +4,7 @@ Tags: auto alt text, seo, image optimization, openai, claude
 Requires at least: 5.8
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.2.1
+Stable tag: 1.2.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -77,6 +77,9 @@ Settings and queues are per-site. Network uninstall clears plugin settings, jobs
 
 == Upgrade Notice ==
 
+= 1.2.2 =
+Fixes generated text being put back to the old values when an attachment is updated, broken image sizes in posts after a file rename, and a Remove Key button that did not remove the key. Recommended for everyone.
+
 = 1.2.1 =
 Fixes two faults introduced in 1.2.0: image uploads could hang on "Crunching..." forever, and the "choose what to regenerate" field selection was ignored. Recommended for everyone on 1.2.0.
 
@@ -84,6 +87,25 @@ Fixes two faults introduced in 1.2.0: image uploads could hang on "Crunching..."
 Security and data-integrity fixes: server-side keys, safe file copies, reliable queues and strict AI validation. Rotate keys if a previous build exposed them to untrusted uploaders. Back up and test on staging first.
 
 == Changelog ==
+
+= 1.2.2 =
+* Fix: On the attachment edit screen, clicking Update after generating no longer puts the old Title and Alt Text back. The form now shows the new text as soon as it is generated.
+* Fix: In the Media Library popup, typing in a field and then clicking Generate straight away no longer lets the typed text overwrite the generated text.
+* Fix: Renaming a file no longer breaks images already placed in posts. Their responsive sizes (srcset) and width and height stay intact, because the plugin now remembers the previous file names. This applies to renames made from this version on.
+* Fix: Deleting a renamed image now also deletes the older copies the plugin kept, instead of leaving them on the server.
+* Fix: Remove Key now really removes the key. It reported success while the key stayed saved.
+* Fix: Saving settings no longer shows a false "Could not persist settings" error.
+* Fix: The unsaved-changes warning no longer appears when nothing was changed, and the settings tabs no longer get stuck because of it.
+* Fix: The AI Model list no longer resets to "Verify API key…" when Settings is opened in Filename mode.
+* Fix: A failed regeneration no longer sends an already processed image back to the queue, where the next bulk run would pay for it again. It keeps its text and stays processed.
+* Fix: "Mark as done" now accepts failed images, so an image the AI can never describe can leave the queue.
+* Fix: Leftover "AI Error:" text written by older versions is now also cleared from the image Description.
+* Improvement: Gemini models are asked to use the least "thinking" they allow. Describing an image needs no reasoning, and thinking is billed and could cut the answer short.
+* Fix: Newer Anthropic Claude models, including Claude 5, now appear in the model list.
+* Fix: An AI answer with extra text around its JSON is now read correctly instead of failing.
+* Change: Clearer wording throughout. The modes are "Filename (free, no API key)" and "AI (uses your API key)", the buttons say "Generate with AI" or "Generate from filename", and the Bulk Optimizer offers "Process all remaining", "Regenerate selected" and "Mark as done" with live counts.
+* Change: The Bulk Optimizer table shows each image's Alt Text, and the status filter applies as soon as it is changed.
+* Change: The model list starts with "Automatic (cheapest available)", and the escalation switch is now called "Try another model when busy".
 
 = 1.2.1 =
 * Fix: Uploading an image could leave the media uploader stuck on "Crunching..." and never finish. A PHP warning raised on every upload was corrupting the response the uploader waits for. The images were still being tagged correctly underneath, but the screen never said so. Introduced in 1.2.0.

@@ -67,7 +67,11 @@ class ALTGENIX_Core {
         add_filter( 'wp_generate_attachment_metadata', array( $this, 'attachment_metadata_ready' ), 100, 3 );
         add_action( 'shutdown', array( $this, 'finish_uploads' ) );
         add_action( 'altgenix_background_process_image', array( $this, 'process_new_attachment' ), 10, 1 );
-        foreach ( array( 'get_pending', 'process_image', 'mark_selected_processed', 'get_auto_queue', 'process_auto', 'rename_existing' ) as $action ) {
+        // Renamed attachments: keep old embeds responsive, and clean up the kept files on delete.
+        add_filter( 'wp_calculate_image_srcset_meta', array( 'ALTGENIX_Files', 'filter_srcset_meta' ), 10, 4 );
+        add_filter( 'wp_image_src_get_dimensions', array( 'ALTGENIX_Files', 'filter_src_dimensions' ), 10, 4 );
+        add_action( 'delete_attachment', array( 'ALTGENIX_Files', 'delete_retained_files' ), 10, 1 );
+        foreach ( array( 'get_pending', 'process_image', 'mark_selected_processed', 'get_auto_queue', 'process_auto', 'rename_existing', 'remaining_count' ) as $action ) {
             add_action( 'wp_ajax_altgenix_' . $action, array( $this, 'ajax_' . $action ) );
         }
     }
@@ -195,7 +199,13 @@ class ALTGENIX_Core {
 
     private function send_result( $result ) {
         if ( is_wp_error( $result ) ) {
-            wp_send_json_error( array( 'message' => $result->get_error_message(), 'code' => $result->get_error_code() ) );
+            $data = $result->get_error_data();
+            wp_send_json_error( array(
+                'message'         => $result->get_error_message(),
+                'code'            => $result->get_error_code(),
+                // The attempt failed but the image keeps its earlier, good results.
+                'still_processed' => is_array( $data ) && ! empty( $data['still_processed'] ),
+            ) );
         }
         wp_send_json_success( $result );
     }
@@ -232,7 +242,7 @@ class ALTGENIX_Core {
     public function ajax_get_pending() {
         $this->authorize( 'manage_options' );
         if ( ! self::has_generation( self::get_settings(), true ) ) {
-            wp_send_json_error( array( 'message' => 'Enable at least one metadata field before starting a bulk run.' ) );
+            wp_send_json_error( array( 'message' => 'Turn on at least one field (Alt Text, Title, Caption or Description) under Settings > Generation Control, then try again.' ) );
         }
         // phpcs:ignore WordPress.Security.NonceVerification.Missing -- authorize() above verifies the shared nonce.
         $after = isset( $_POST['after_id'] ) && is_scalar( $_POST['after_id'] ) ? absint( $_POST['after_id'] ) : 0;
@@ -253,6 +263,22 @@ class ALTGENIX_Core {
         } finally { remove_filter( 'posts_where', $where, 10 ); }
         $ids = array_map( 'intval', $query->posts );
         wp_send_json_success( array( 'ids' => $ids, 'remaining' => (int) $query->found_posts, 'next_cursor' => $ids ? max( $ids ) : $after ) );
+    }
+
+    /** Images a bulk run would work through: never processed, or failed. */
+    public static function remaining_count() {
+        $query = new WP_Query( array(
+            'post_type' => 'attachment', 'post_status' => 'inherit', 'post_mime_type' => self::queue_mime_types(),
+            'posts_per_page' => 1, 'fields' => 'ids',
+            'meta_query' => array( array( 'key' => '_altgenix_processed', 'compare' => 'NOT EXISTS' ) ),
+        ) );
+        return (int) $query->found_posts;
+    }
+
+    /** One query after a run finishes, so the count on the button stays true. */
+    public function ajax_remaining_count() {
+        $this->authorize( 'manage_options' );
+        wp_send_json_success( array( 'remaining' => self::remaining_count() ) );
     }
 
     public function ajax_process_image() {
@@ -284,6 +310,7 @@ class ALTGENIX_Core {
         $count   = 0;
         $skipped = 0;
         $updated = array();
+        $alts    = array();
         foreach ( $ids as $id ) {
             $token = ALTGENIX_Lock::acquire( $id );
             if ( ! $token ) {
@@ -292,15 +319,20 @@ class ALTGENIX_Core {
             }
             $save_error = false;
             try {
-                if ( get_post_meta( $id, '_altgenix_auto', true ) || metadata_exists( 'post', $id, '_altgenix_error' ) || get_post_meta( $id, '_altgenix_processed', true ) ) {
+                // Failed images are accepted on purpose. An image the provider will
+                // never describe (refused, unreadable) otherwise sits in every
+                // "process all" run forever, billed each time, with no way out.
+                if ( get_post_meta( $id, '_altgenix_auto', true ) || ( get_post_meta( $id, '_altgenix_processed', true ) && ! metadata_exists( 'post', $id, '_altgenix_error' ) ) ) {
                     $skipped++;
                     continue;
                 }
                 if ( ! update_post_meta( $id, '_altgenix_processed', '1' ) && get_post_meta( $id, '_altgenix_processed', true ) !== '1' ) {
                     $save_error = true;
                 } else {
+                    delete_post_meta( $id, '_altgenix_error' );
                     $count++;
                     $updated[] = $id;
+                    $alts[ $id ] = (string) get_post_meta( $id, '_wp_attachment_image_alt', true );
                 }
             } finally {
                 ALTGENIX_Lock::release( $id, $token );
@@ -309,10 +341,20 @@ class ALTGENIX_Core {
                 wp_send_json_error( array( 'message' => 'Could not save processed status. Please retry.' ) );
             }
         }
-        wp_send_json_success( array( 'count' => $count, 'skipped' => $skipped, 'updated_ids' => array_map( 'intval', $updated ) ) );
+        wp_send_json_success( array( 'count' => $count, 'skipped' => $skipped, 'updated_ids' => array_map( 'intval', $updated ), 'updated_alts' => (object) $alts ) );
     }
 
-    private function set_processing_error( $id, $message ) {
+    /**
+     * Record a failure so the image stays in the queue for a retry.
+     *
+     * An image that already has good results is left processed: a regenerate that
+     * hits a rate limit must not throw away its finished state, or the next
+     * "Process all remaining" pays for it again. The person who tried is told
+     * directly instead. $force is for failures that leave this run's own work
+     * unfinished, such as a requested rename that did not happen.
+     */
+    private function set_processing_error( $id, $message, $force = false ) {
+        if ( ! $force && get_post_meta( $id, '_altgenix_processed', true ) ) { return; }
         update_post_meta( $id, '_altgenix_error', wp_slash( ALTGENIX_API::redact_error( $message ) ) );
         delete_post_meta( $id, '_altgenix_processed' );
     }
@@ -338,7 +380,11 @@ class ALTGENIX_Core {
             if ( ! $is_bulk && get_post_meta( $attachment_id, '_altgenix_processed', true ) ) {
                 return array( 'status' => 'skipped', 'message' => 'Image already processed.' );
             }
-            return $this->run_processing( $attachment_id, $is_bulk, $options, $rename_override, $delete_old );
+            $result = $this->run_processing( $attachment_id, $is_bulk, $options, $rename_override, $delete_old );
+            if ( is_wp_error( $result ) && get_post_meta( $attachment_id, '_altgenix_processed', true ) ) {
+                $result->add_data( array( 'still_processed' => true ) );
+            }
+            return $result;
         } finally {
             ALTGENIX_Lock::release( $attachment_id, $token );
             delete_post_meta( $attachment_id, '_altgenix_auto' );
@@ -356,7 +402,7 @@ class ALTGENIX_Core {
             $options['rename_file'] = ( $options['mode'] === 'ai' && $rename_override ) ? 1 : 0;
         }
         if ( ! self::has_generation( $options, false ) ) {
-            return array( 'status' => 'skipped', 'message' => 'No metadata fields or filename generation are enabled. Image remains pending.' );
+            return array( 'status' => 'skipped', 'message' => 'Nothing to generate: every field is switched off. The image stays pending.' );
         }
         $path = get_attached_file( $id );
         if ( ! ALTGENIX_Files::is_local_image( $path ) ) {
@@ -369,7 +415,7 @@ class ALTGENIX_Core {
         $api = new ALTGENIX_API();
         if ( ! $api->is_configured() ) {
             $this->set_processing_error( $id, 'Save and verify an API key in Settings before generating AI metadata.' );
-            return new WP_Error( 'altgenix_configuration', 'AI is not configured. Existing metadata was preserved.' );
+            return new WP_Error( 'altgenix_configuration', 'AI is not set up yet. Add and verify an API key in AltGenix AI > Settings. Nothing was changed.' );
         }
         // When rename_file is enabled above, the filename is requested in this
         // same AI response as the enabled metadata fields.
@@ -396,7 +442,7 @@ class ALTGENIX_Core {
                 $message = 'The requested filename change failed: ' . $rename->get_error_message();
                 update_post_meta( $id, '_altgenix_rename_error', wp_slash( $message ) );
                 update_post_meta( $id, '_altgenix_pending_filename', wp_slash( $parsed['filename'] ) );
-                $this->set_processing_error( $id, $message );
+                $this->set_processing_error( $id, $message, true );
                 return new WP_Error( 'altgenix_rename_failed', $message . ' Any generated text fields were saved; use the retry rename action to apply the saved filename without another AI request.' );
             } else {
                 $rename_result = $rename;
@@ -409,8 +455,10 @@ class ALTGENIX_Core {
         // placeholder beside a green "Processed" badge.
         $result = array(
             'status'     => 'success',
-            'message'    => $options['rename_file'] ? 'AI metadata saved and filename updated.' : 'AI metadata saved.',
+            'message'    => $options['rename_file'] ? 'AI text saved and filename updated.' : 'AI text saved.',
             'item_title' => get_the_title( $id ),
+            'item_alt'   => (string) get_post_meta( $id, '_wp_attachment_image_alt', true ),
+            'fields'     => $this->saved_fields( $id, $parsed ),
         );
         if ( is_array( $rename_result ) ) {
             if ( ! empty( $rename_result['new_filename'] ) ) { $result['new_filename'] = $rename_result['new_filename']; }
@@ -422,20 +470,30 @@ class ALTGENIX_Core {
     }
 
     public static function parse_metadata( $text, $options ) {
-        if ( ! is_string( $text ) || strlen( $text ) > 32768 ) { return new WP_Error( 'altgenix_json', 'AI returned an invalid metadata response.' ); }
+        $unreadable = 'The AI reply was not in the expected format. Nothing was changed; try again.';
+        if ( ! is_string( $text ) || strlen( $text ) > 32768 ) { return new WP_Error( 'altgenix_json', $unreadable ); }
         $text = trim( $text );
         $text = preg_replace( '/\A```(?:json)?\s*([\s\S]*?)\s*```\z/i', '$1', $text );
         $data = json_decode( $text );
-        if ( ! is_object( $data ) ) { return new WP_Error( 'altgenix_json', 'AI did not return a JSON object. Existing metadata was preserved.' ); }
+        if ( ! is_object( $data ) ) {
+            // Providers without a JSON mode (Claude here) sometimes put a line of prose
+            // or a fence around the object. The call is already paid for, so take the
+            // outermost {...} rather than failing the image.
+            $start = strpos( $text, '{' );
+            $end   = strrpos( $text, '}' );
+            if ( $start !== false && $end !== false && $end > $start ) { $data = json_decode( substr( $text, $start, $end - $start + 1 ) ); }
+        }
+        if ( ! is_object( $data ) ) { return new WP_Error( 'altgenix_json', $unreadable ); }
         $fields = array( 'alt' => 'gen_alt', 'title' => 'gen_title', 'caption' => 'gen_caption', 'description' => 'gen_desc', 'filename' => 'rename_file' );
+        $labels = array( 'alt' => 'alt text', 'title' => 'title', 'caption' => 'caption', 'description' => 'description', 'filename' => 'file name' );
         $result = array();
         foreach ( $fields as $field => $toggle ) {
             if ( empty( $options[ $toggle ] ) ) { continue; }
             if ( ! isset( $data->$field ) || ! is_string( $data->$field ) || strlen( $data->$field ) > 8000 ) {
-                return new WP_Error( 'altgenix_schema', 'AI returned missing or invalid ' . $field . '. Existing metadata was preserved.' );
+                return new WP_Error( 'altgenix_schema', 'The AI reply had no usable ' . $labels[ $field ] . '. Nothing was changed; try again.' );
             }
             $value = in_array( $field, array( 'description', 'caption' ), true ) ? sanitize_textarea_field( $data->$field ) : sanitize_text_field( $data->$field );
-            if ( trim( $value ) === '' ) { return new WP_Error( 'altgenix_schema', 'AI returned empty ' . $field . '. Existing metadata was preserved.' ); }
+            if ( trim( $value ) === '' ) { return new WP_Error( 'altgenix_schema', 'The AI reply left the ' . $labels[ $field ] . ' empty. Nothing was changed; try again.' ); }
             $result[ $field ] = $value;
         }
         return $result;
@@ -471,7 +529,29 @@ class ALTGENIX_Core {
         }
         $result = $this->save_metadata( $id, $data, $options );
         if ( is_wp_error( $result ) ) { return $result; }
-        return array( 'status' => 'fallback', 'message' => 'Metadata generated from the filename.', 'item_title' => get_the_title( $id ) );
+        return array(
+            'status'     => 'fallback',
+            'message'    => 'Text generated from the filename.',
+            'item_title' => get_the_title( $id ),
+            'item_alt'   => (string) get_post_meta( $id, '_wp_attachment_image_alt', true ),
+            'fields'     => $this->saved_fields( $id, $data ),
+        );
+    }
+
+    /**
+     * What is now stored for each field this run wrote, read back from the database.
+     *
+     * An edit screen left open shows the text it loaded with. The attachment screen
+     * then submits that stale text with Update and silently undoes the run, so the
+     * browser needs the new values to put into its fields.
+     */
+    private function saved_fields( $id, $data ) {
+        $fields = array();
+        if ( isset( $data['alt'] ) ) { $fields['alt'] = (string) get_post_meta( $id, '_wp_attachment_image_alt', true ); }
+        if ( isset( $data['title'] ) ) { $fields['title'] = (string) get_post_field( 'post_title', $id, 'raw' ); }
+        if ( isset( $data['caption'] ) ) { $fields['caption'] = (string) get_post_field( 'post_excerpt', $id, 'raw' ); }
+        if ( isset( $data['description'] ) ) { $fields['description'] = (string) get_post_field( 'post_content', $id, 'raw' ); }
+        return $fields;
     }
 
     public function ajax_rename_existing() {

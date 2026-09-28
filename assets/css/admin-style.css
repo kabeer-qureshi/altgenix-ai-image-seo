@@ -486,7 +486,6 @@ a.altgenix-btn-secondary:active { color: #4f46e5; text-decoration: none; }
 .altgenix-length-col .altgenix-custom-select { max-width: 200px; }
 .altgenix-table-filters .altgenix-custom-select { max-width: 190px; }
 .altgenix-table-filters .altgenix-per-page + .altgenix-custom-select { max-width: 150px; margin-left: 10px; }
-#altgenix-apply-filter { height: 44px; display: inline-flex; align-items: center; box-sizing: border-box; }
 
 /* DELIBERATELY ONE COLUMN. The pairing described below was tried and rolled back by
    hand — do not "restore" it. Kept for the record: provider belongs with its key,
