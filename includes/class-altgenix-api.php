@@ -8,6 +8,7 @@ class ALTGENIX_API {
     private $models = array();
     private $model = '';
     private $allow_escalation = false;
+    private $details = array();
     private $deadline;
     private $requests = 0;
 
@@ -18,12 +19,17 @@ class ALTGENIX_API {
         $this->model = $options['model'];
         $this->allow_escalation = ! empty( $options['allow_escalation'] );
         $this->models = self::verified_models( $options );
+        $this->details = self::model_details( $options );
     }
 
     public static function provider_labels() {
-        return array( 'gemini' => 'Google Gemini', 'openai' => 'OpenAI', 'claude' => 'Anthropic Claude', 'deepseek' => 'DeepSeek' );
+        return array( 'gemini' => 'Google Gemini', 'openai' => 'OpenAI', 'claude' => 'Anthropic Claude', 'deepseek' => 'DeepSeek', 'openrouter' => 'OpenRouter' );
     }
     public static function supported_providers() { return array_keys( self::provider_labels() ); }
+    private static function provider_label( $provider ) {
+        $labels = self::provider_labels();
+        return isset( $labels[ $provider ] ) ? $labels[ $provider ] : $provider;
+    }
     public static function default_models( $provider ) {
         $models = array(
             'openai' => array( 'gpt-4o-mini', 'gpt-4o' ),
@@ -40,13 +46,103 @@ class ALTGENIX_API {
         if ( ! is_array( $models ) || ( $context !== '' && ! hash_equals( self::context( $options['provider'], $options['api_key'] ), (string) $context ) ) ) { return array(); }
         // Also validates legacy unscoped lists when upgrading from 1.2.0.
         $models = array_values( array_filter( $models, function ( $id ) use ( $options ) { return self::is_metadata_model( $options['provider'], $id ); } ) );
-        return array_values( array_unique( $models ) );
+        $models = array_values( array_unique( $models ) );
+        $gone = self::unavailable_models( $options );
+        return $gone ? array_values( array_diff( $models, $gone ) ) : $models;
+    }
+
+    /**
+     * Write the verified model list for a key, with what was learned about each model.
+     *
+     * Details exist only for OpenRouter today: its catalogue says, per model, what it
+     * costs, whether it takes a JSON mode and how far its reasoning can be turned down.
+     * They are scoped to the same key context as the list, so they can never describe
+     * another provider's models.
+     */
+    public static function save_verified_models( $provider, $key, $models, $details = array() ) {
+        $context = self::context( $provider, $key );
+        update_option( 'altgenix_valid_models', array_values( $models ), false );
+        update_option( 'altgenix_models_context', $context, false );
+        update_option( 'altgenix_model_details', array( 'context' => $context, 'models' => is_array( $details ) ? $details : array() ), false );
+    }
+
+    public static function model_details( $options ) {
+        $stored = get_option( 'altgenix_model_details', array() );
+        if ( ! is_array( $stored ) || empty( $stored['context'] ) || ! isset( $stored['models'] ) || ! is_array( $stored['models'] ) ) { return array(); }
+        if ( ! hash_equals( self::context( $options['provider'], $options['api_key'] ), (string) $stored['context'] ) ) { return array(); }
+        return $stored['models'];
+    }
+
+    /**
+     * Models this key turned out not to be able to use, found while processing.
+     *
+     * Providers list models a key cannot run: Google keeps retired models in its
+     * catalogue and answers them with 404 "no longer available to new users", and
+     * gives free keys a quota of zero on its Pro models. Each is found once, by a
+     * request that failed without being billed, and then hidden from the model list
+     * and from Automatic. Verify & Refresh Models starts the list again, so a key that
+     * has since been upgraded gets those models back.
+     */
+    public static function unavailable_models( $options ) {
+        $stored = get_option( 'altgenix_unavailable_models', array() );
+        if ( ! is_array( $stored ) || empty( $stored['context'] ) || empty( $stored['models'] ) || ! is_array( $stored['models'] ) ) { return array(); }
+        if ( ! hash_equals( self::context( $options['provider'], $options['api_key'] ), (string) $stored['context'] ) ) { return array(); }
+        return array_values( array_filter( $stored['models'], 'is_string' ) );
+    }
+
+    private function mark_unavailable( $model ) {
+        $this->models = array_values( array_diff( $this->models, array( $model ) ) );
+        $gone = self::unavailable_models( array( 'provider' => $this->provider, 'api_key' => $this->api_key ) );
+        if ( in_array( $model, $gone, true ) ) { return; }
+        $gone[] = $model;
+        update_option( 'altgenix_unavailable_models', array( 'context' => self::context( $this->provider, $this->api_key ), 'models' => array_slice( $gone, -50 ) ), false );
+    }
+
+    /** What the model dropdown shows: the ID, plus OpenRouter's price where it is known. */
+    public static function model_label( $id, $details ) {
+        if ( ! isset( $details[ $id ]['prompt'], $details[ $id ]['completion'] ) ) { return $id; }
+        $prompt = (float) $details[ $id ]['prompt'];
+        $completion = (float) $details[ $id ]['completion'];
+        if ( $prompt <= 0 && $completion <= 0 ) { return $id . ' · free (daily limit)'; }
+        return $id . ' · $' . self::per_million( $prompt ) . ' / $' . self::per_million( $completion );
+    }
+
+    public static function model_labels( $models, $details ) {
+        $labels = array();
+        foreach ( $models as $id ) { $labels[ $id ] = self::model_label( $id, $details ); }
+        return $labels;
+    }
+
+    /** A per-token price as dollars per million tokens: 0.10, 0.075, 2.50. */
+    private static function per_million( $per_token ) {
+        // Rounded first: 0.0000001 * 1e6 is 0.0999999… in floating point, which read "$0.1".
+        $value = round( $per_token * 1000000, 6 );
+        if ( $value < 0.01 ) { return number_format( $value, 4 ); }
+        if ( $value < 0.1 ) { return rtrim( number_format( $value, 3 ), '0' ); }
+        return number_format( $value, 2 );
     }
 
     private function models_to_try() {
+        // A model chosen in Settings that this key can no longer use is reported, not
+        // silently swapped for the cheapest one: the person picked it for a reason.
+        if ( $this->model !== '' && ! in_array( $this->model, $this->models, true ) ) { return array(); }
         $start = array_search( $this->model, $this->models, true );
         $chain = array_slice( $this->models, $start === false ? 0 : $start );
         return array_slice( $chain, 0, $this->allow_escalation ? 3 : 1 );
+    }
+
+    /** An OpenRouter model whose catalogue price is zero, so a retry with it bills nothing. */
+    private function is_free_model( $model ) {
+        if ( $this->provider !== 'openrouter' || ! isset( $this->details[ $model ]['prompt'], $this->details[ $model ]['completion'] ) ) { return false; }
+        return (float) $this->details[ $model ]['prompt'] <= 0 && (float) $this->details[ $model ]['completion'] <= 0;
+    }
+
+    /** The first free model in list order that this image has not been sent to, or ''. */
+    private function next_free_model( $tried ) {
+        foreach ( $this->models as $id ) {
+            if ( ! in_array( $id, $tried, true ) && $this->is_free_model( $id ) ) { return $id; }
+        }
+        return '';
     }
     public function is_configured() { return $this->api_key !== '' && ! empty( $this->models ); }
 
@@ -210,12 +306,46 @@ class ALTGENIX_API {
         $prompt = $this->build_prompt( $options );
         $this->deadline = microtime( true ) + 45;
         $this->requests = 0;
+        $chain = $this->models_to_try();
+        if ( ! $chain && $this->model !== '' ) {
+            return new WP_Error( 'altgenix_model_missing', sprintf( 'The AI model chosen in Settings (%s) is no longer available to this API key. Nothing was changed. Choose another model in AltGenix AI > Settings.', $this->model ) );
+        }
         $last = new WP_Error( 'altgenix_models', 'No usable model is configured.' );
-        foreach ( $this->models_to_try() as $model ) {
+        $tried = array();
+        while ( $chain ) {
+            $model = array_shift( $chain );
+            $tried[] = $model;
             $result = $this->request_model( $model, $prompt, $image, $mime );
-            if ( ! is_wp_error( $result ) ) { return $result; }
+            $free = $this->model === '' && $this->is_free_model( $model );
+            if ( ! is_wp_error( $result ) && ( ! $free || ! is_wp_error( ALTGENIX_Core::parse_metadata( $result['text'], $options ) ) ) ) { return $result; }
             $last = $result;
-            if ( ! in_array( $result->get_error_code(), array( 'altgenix_busy', 'altgenix_model_unavailable' ), true ) ) { break; }
+            $code = is_wp_error( $result ) ? $result->get_error_code() : 'altgenix_json';
+            // OpenRouter's free models cost nothing per request, so on Automatic any
+            // one-off failure of one hands the image to the next free model: an answer
+            // that is not the JSON asked for (openrouter/free can route to a guard model
+            // that replies "User Safety: safe"), a busy upstream, or a timeout. Never
+            // after a key or account problem, never onto a paid model, and at most three
+            // models within the time budget.
+            if ( $free && ! in_array( $code, array( 'altgenix_auth', 'altgenix_credits' ), true ) ) {
+                $next = $this->next_free_model( $tried );
+                if ( $next !== '' && count( $tried ) < 3 && $this->requests < 6 && microtime( true ) < $this->deadline - 5 ) {
+                    $chain = array( $next );
+                    continue;
+                }
+            }
+            if ( ! is_wp_error( $result ) ) { break; }
+            if ( in_array( $code, array( 'altgenix_model_unavailable', 'altgenix_no_quota' ), true ) ) {
+                $this->mark_unavailable( $model );
+                // Neither answer is billed. Automatic means "the cheapest model this key
+                // can use", so the next one in the list takes over for this image. A
+                // model chosen by hand is not replaced behind the person's back.
+                if ( $this->model === '' && ! $chain ) {
+                    $next = array_values( array_diff( $this->models, $tried ) );
+                    if ( $next ) { $chain[] = $next[0]; }
+                }
+                continue;
+            }
+            if ( $code !== 'altgenix_busy' ) { break; }
         }
         return $last;
     }
@@ -239,11 +369,16 @@ class ALTGENIX_API {
 
     private function request_model( $model, $prompt, $image, $mime ) {
         $headers = array( 'Content-Type' => 'application/json' );
-        $json_retry = in_array( $this->provider, array( 'gemini', 'deepseek' ), true );
-        $json_mode  = true;
+        $json_retry = in_array( $this->provider, array( 'gemini', 'deepseek', 'openrouter' ), true );
+        $detail     = isset( $this->details[ $model ] ) && is_array( $this->details[ $model ] ) ? $this->details[ $model ] : array();
+        // OpenRouter passes response_format only to models that take it; the catalogue
+        // says which. With nothing known, try it and let the 400 fallback decide.
+        $json_mode  = $this->provider !== 'openrouter' || ! isset( $detail['json'] ) || ! empty( $detail['json'] );
         $thinking   = $this->provider === 'gemini' ? self::gemini_thinking_config( $model ) : array();
-        // Up to three shapes: as configured, then without a rejected thinking setting,
-        // then without JSON mode. Each fallback happens only on the matching 400.
+        $reasoning  = $this->provider === 'openrouter' && ! empty( $detail['effort'] ) && is_string( $detail['effort'] ) ? $detail['effort'] : '';
+        // Up to three shapes: as configured, then without a rejected thinking or
+        // reasoning setting, then without JSON mode. Each fallback happens only on the
+        // matching 400.
         for ( $attempt = 0; $attempt < 3; $attempt++ ) {
             if ( $this->provider === 'gemini' ) {
                 $url = 'https://generativelanguage.googleapis.com/v1beta/models/' . rawurlencode( $model ) . ':generateContent';
@@ -257,23 +392,32 @@ class ALTGENIX_API {
                 $headers['anthropic-version'] = '2023-06-01';
                 $payload = array( 'model' => $model, 'max_tokens' => 2048, 'messages' => array( array( 'role' => 'user', 'content' => array( array( 'type' => 'image', 'source' => array( 'type' => 'base64', 'media_type' => $mime, 'data' => $image ) ), array( 'type' => 'text', 'text' => $prompt ) ) ) ) );
             } else {
-                $url = $this->provider === 'openai' ? 'https://api.openai.com/v1/chat/completions' : 'https://api.deepseek.com/chat/completions';
+                $urls = array( 'openai' => 'https://api.openai.com/v1/chat/completions', 'deepseek' => 'https://api.deepseek.com/chat/completions', 'openrouter' => 'https://openrouter.ai/api/v1/chat/completions' );
+                $url = $urls[ $this->provider ];
                 $headers['Authorization'] = 'Bearer ' . $this->api_key;
                 $payload = array( 'model' => $model, 'max_tokens' => 2048, 'messages' => array( array( 'role' => 'user', 'content' => array( array( 'type' => 'text', 'text' => $prompt ), array( 'type' => 'image_url', 'image_url' => array( 'url' => 'data:' . $mime . ';base64,' . $image ) ) ) ) ) );
+                if ( $this->provider === 'openrouter' ) {
+                    $headers = array_merge( $headers, self::openrouter_headers() );
+                    // Reasoning shares max_tokens with the answer on most models, and
+                    // some cannot switch it off. Room for both; only what is used is billed.
+                    $payload['max_tokens'] = 4096;
+                    if ( $reasoning !== '' ) { $payload['reasoning'] = array( 'effort' => $reasoning ); }
+                }
                 if ( $json_mode ) { $payload['response_format'] = array( 'type' => 'json_object' ); }
             }
             $response = $this->post_with_retry( $url, array( 'headers' => $headers, 'body' => wp_json_encode( $payload ) ) );
-            if ( is_wp_error( $response ) ) { return new WP_Error( 'altgenix_network', self::redact_error( $response->get_error_message(), $this->api_key ) ); }
+            if ( is_wp_error( $response ) ) {
+                $raw = self::redact_error( $response->get_error_message(), $this->api_key );
+                return new WP_Error( 'altgenix_network', $response->get_error_code() === 'altgenix_timeout' ? $raw : $this->network_error_message( $raw ) );
+            }
             $code = (int) wp_remote_retrieve_response_code( $response );
             $data = json_decode( wp_remote_retrieve_body( $response ), true );
             $message = isset( $data['error']['message'] ) && is_string( $data['error']['message'] ) ? $data['error']['message'] : 'Provider request failed (HTTP ' . $code . ').';
             // Checked first, so a model that refuses the thinking setting does not also lose JSON mode.
             if ( $thinking && $code === 400 && preg_match( '/thinking/i', $message ) ) { $thinking = array(); continue; }
+            if ( $reasoning !== '' && $code === 400 && preg_match( '/reasoning|effort/i', $message ) ) { $reasoning = ''; continue; }
             if ( $json_retry && $json_mode && $code === 400 && preg_match( '/json|response_?mime|response_format/i', $message ) ) { $json_mode = false; continue; }
-            if ( $code !== 200 ) {
-                $error_code = in_array( $code, array( 429, 500, 502, 503, 504, 529 ), true ) ? 'altgenix_busy' : ( $code === 404 ? 'altgenix_model_unavailable' : 'altgenix_api' );
-                return new WP_Error( $error_code, self::redact_error( $message, $this->api_key ) );
-            }
+            if ( $code !== 200 ) { return $this->http_error( $code, $message, $model ); }
             if ( ! is_array( $data ) ) { return new WP_Error( 'altgenix_response', 'Provider returned invalid JSON.' ); }
             $text = '';
             if ( $this->provider === 'gemini' ) {
@@ -297,6 +441,10 @@ class ALTGENIX_API {
                 }
             } else {
                 $choice = isset( $data['choices'][0] ) ? $data['choices'][0] : array();
+                // OpenRouter can report an upstream failure inside a 200 response.
+                if ( isset( $choice['error']['message'] ) && is_string( $choice['error']['message'] ) ) {
+                    return new WP_Error( 'altgenix_api', self::redact_error( $choice['error']['message'], $this->api_key ) );
+                }
                 if ( ! empty( $choice['message']['refusal'] ) || ( isset( $choice['finish_reason'] ) && $choice['finish_reason'] !== 'stop' ) ) {
                     return new WP_Error( 'altgenix_incomplete', 'The provider returned an incomplete or refused response.' );
                 }
@@ -307,6 +455,61 @@ class ALTGENIX_API {
             return new WP_Error( 'altgenix_empty', 'The provider returned no usable text. Existing metadata was preserved.' );
         }
         return new WP_Error( 'altgenix_response', 'Provider rejected the metadata request.' );
+    }
+
+    /**
+     * Turn a provider's HTTP failure into an error the rest of the plugin can act on.
+     *
+     * The code decides what happens next. A busy or unavailable model may hand over to
+     * another one; a key or account problem stops a bulk run, instead of failing every
+     * remaining image with the same message.
+     */
+    private function http_error( $code, $message, $model ) {
+        $label = self::provider_label( $this->provider );
+        $message = self::redact_error( $message, $this->api_key );
+        // Google answers a retired model with 404 "no longer available to new users,
+        // please update your code". Nobody running this plugin can update its code.
+        if ( $code === 404 ) {
+            return new WP_Error( 'altgenix_model_unavailable', sprintf( '%1$s no longer offers %2$s to this API key. Nothing was changed. Choose another model in AltGenix AI > Settings.', $label, $model ) );
+        }
+        // A model the plan has no allowance for: Google answers 429 with "limit: 0".
+        // Waiting does not help, so it is not "busy".
+        if ( $code === 429 && preg_match( '/\blimit:\s*0\b/', $message ) ) {
+            return new WP_Error( 'altgenix_no_quota', sprintf( 'Your %1$s API key has no quota for %2$s. Free keys do not include every model. Nothing was changed. Choose another model in AltGenix AI > Settings, or enable billing for this key.', $label, $model ) );
+        }
+        if ( in_array( $code, array( 429, 500, 502, 503, 504, 529 ), true ) ) { return new WP_Error( 'altgenix_busy', $message ); }
+        // OpenRouter uses 403 for a moderation or guardrail block on this one image, not for the key.
+        if ( $code === 401 || ( $code === 403 && $this->provider !== 'openrouter' ) || ( $code === 400 && preg_match( '/api[ _]?key not valid|API_KEY_INVALID/i', $message ) ) ) {
+            return new WP_Error( 'altgenix_auth', sprintf( '%1$s did not accept the API key. Nothing was changed. Check the key in AltGenix AI > Settings. (%2$s)', $label, $message ) );
+        }
+        if ( $code === 402 ) {
+            return new WP_Error( 'altgenix_credits', sprintf( '%1$s refused the request: the account is out of credit or has used up its free requests for today. Nothing was changed. (%2$s)', $label, $message ) );
+        }
+        return new WP_Error( 'altgenix_api', $message );
+    }
+
+    /**
+     * Say what a failed connection means, instead of showing the bare cURL text.
+     *
+     * "Nothing was changed" is true: core writes no metadata on any AI error. A timeout
+     * is never retried, because the request may have completed and been billed.
+     */
+    private function network_error_message( $raw ) {
+        $label = self::provider_label( $this->provider );
+        if ( preg_match( '/cURL error 28|timed out/i', $raw ) ) {
+            return sprintf( '%1$s did not answer in time. Nothing was changed. Try again later, or choose a different AI model in Settings. (%2$s)', $label, $raw );
+        }
+        return sprintf( 'Could not reach %1$s. Nothing was changed. Check that this site can make outgoing connections, then try again. (%2$s)', $label, $raw );
+    }
+
+    /**
+     * OpenRouter's app attribution. It names the plugin, never the site it runs on.
+     */
+    private static function openrouter_headers() {
+        return array(
+            'HTTP-Referer'       => 'https://wordpress.org/plugins/altgenix-ai-image-seo/',
+            'X-OpenRouter-Title' => 'AltGenix AI Image SEO',
+        );
     }
 
     /**
@@ -364,11 +567,30 @@ class ALTGENIX_API {
             $when = strtotime( $header );
             if ( $when !== false ) { return max( 0, $when - time() ); }
         }
+        // Google sends no Retry-After header; the wait is in the body as RetryInfo,
+        // e.g. "30686s" on a free key's zero quota. Waiting that out is pointless, and
+        // reading it is what stops the retry.
+        $data = json_decode( (string) wp_remote_retrieve_body( $response ), true );
+        if ( isset( $data['error']['details'] ) && is_array( $data['error']['details'] ) ) {
+            foreach ( $data['error']['details'] as $detail ) {
+                if ( isset( $detail['retryDelay'] ) && is_string( $detail['retryDelay'] ) && preg_match( '/^(\d+)(?:\.\d+)?s$/', $detail['retryDelay'], $match ) ) { return (int) $match[1]; }
+            }
+        }
         return $attempt;
     }
 
     private static function is_metadata_model( $provider, $id ) {
-        if ( ! is_string( $id ) || ! preg_match( '/^[a-zA-Z0-9._-]{1,100}$/D', $id ) ) { return false; }
+        if ( ! is_string( $id ) ) { return false; }
+        // OpenRouter IDs are "vendor/model[:variant]". Left out: ":batch" variants
+        // (asynchronous batch API only), "~" moving aliases whose model and price
+        // change under you, "stealth/" previews (they log prompts and expire within
+        // weeks), and moderation classifiers, which cannot describe an image.
+        if ( $provider === 'openrouter' ) {
+            return strlen( $id ) <= 100 && (bool) preg_match( '#^[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._:-]*$#iD', $id ) &&
+                ! preg_match( '/:batch$/i', $id ) && stripos( $id, 'stealth/' ) !== 0 &&
+                ! preg_match( '/(?:^|[\/._:-])(?:guard|safety|moderation)(?:[\/._:-]|$)/i', $id );
+        }
+        if ( ! preg_match( '/^[a-zA-Z0-9._-]{1,100}$/D', $id ) ) { return false; }
         if ( $provider === 'gemini' ) {
             return (bool) preg_match( '/^gemini-\d+(?:\.\d+)?-(?:flash|pro)(?:-|$)/', $id ) &&
                 ! preg_match( '/(?:^|-)(?:image|imagen|tts|audio|speech|live|embedding|veo|video|robotics|computer)(?:-|$)/', $id );
@@ -384,6 +606,7 @@ class ALTGENIX_API {
     public static function verify_key( $provider, $key ) {
         $failure = function ( $message ) use ( $key ) { return array( 'valid' => false, 'models' => array(), 'message' => self::redact_error( $message, $key ) ); };
         if ( ! in_array( $provider, self::supported_providers(), true ) || ! is_string( $key ) || trim( $key ) === '' ) { return $failure( 'Select a provider and enter an API key.' ); }
+        if ( $provider === 'openrouter' ) { return self::verify_openrouter( $key ); }
         $headers = array();
         $urls = array( 'gemini' => 'https://generativelanguage.googleapis.com/v1beta/models?pageSize=100', 'openai' => 'https://api.openai.com/v1/models', 'claude' => 'https://api.anthropic.com/v1/models?limit=100', 'deepseek' => 'https://api.deepseek.com/models' );
         if ( $provider === 'gemini' ) { $headers['x-goog-api-key'] = $key; }
@@ -421,15 +644,161 @@ class ALTGENIX_API {
         }
         $models = array_values( array_unique( $models ) );
         if ( ! $models ) { return $failure( 'No supported vision metadata models are available to this key. Previous settings were preserved.' ); }
+        $note = '';
+        if ( $provider === 'gemini' ) {
+            $retired = self::retired_gemini_models( $models, $key, $deadline );
+            if ( $retired ) {
+                $models = array_values( array_diff( $models, $retired ) );
+                $note = count( $retired ) === 1 ? '1 model Google no longer offers to this key was left out.' : count( $retired ) . ' models Google no longer offers to this key were left out.';
+            }
+            if ( ! $models ) { return $failure( 'Google no longer offers any of its image-capable models to this key. Previous settings were preserved.' ); }
+        }
         if ( $provider === 'gemini' || $provider === 'claude' ) {
             usort( $models, function ( $a, $b ) use ( $provider ) {
                 $rank = function ( $id ) use ( $provider ) {
                     if ( $provider === 'claude' ) { return strpos( $id, 'haiku' ) !== false ? 0 : ( strpos( $id, 'sonnet' ) !== false ? 1 : 2 ); }
                     return strpos( $id, 'lite' ) !== false ? 0 : ( strpos( $id, 'pro' ) !== false ? 2 : 1 );
                 };
-                return $rank( $a ) === $rank( $b ) ? strnatcmp( $b, $a ) : $rank( $a ) - $rank( $b );
+                if ( $rank( $a ) !== $rank( $b ) ) { return $rank( $a ) - $rank( $b ); }
+                if ( $provider === 'gemini' ) {
+                    // Newest version first, and within one version the stable model ahead
+                    // of its preview. A reverse string sort alone put
+                    // "3.1-flash-lite-preview" above "3.1-flash-lite".
+                    $by_version = version_compare( self::gemini_version( $b ), self::gemini_version( $a ) );
+                    if ( $by_version !== 0 ) { return $by_version; }
+                    $preview = function ( $id ) { return preg_match( '/-(?:preview|exp)(?:-|$)/', $id ) ? 1 : 0; };
+                    if ( $preview( $a ) !== $preview( $b ) ) { return $preview( $a ) - $preview( $b ); }
+                }
+                return strnatcmp( $b, $a );
             } );
         } else { $models = array_values( array_intersect( self::default_models( $provider ), $models ) ); }
-        return array( 'valid' => true, 'models' => $models, 'message' => 'API authentication verified. Generation availability and billing are checked when processing an image.' );
+        return array( 'valid' => true, 'models' => $models, 'message' => trim( 'API authentication verified. Generation availability and billing are checked when processing an image. ' . $note ), 'note' => $note );
+    }
+
+    /** "3.1" from "gemini-3.1-flash-lite"; "0" when there is no version. */
+    private static function gemini_version( $id ) {
+        return preg_match( '/^gemini-(\d+(?:\.\d+)?)/', (string) $id, $match ) ? $match[1] : '0';
+    }
+
+    /**
+     * Gemini models in the catalogue that this key can no longer call.
+     *
+     * Google keeps retired models in its model list and answers them with 404 "no
+     * longer available to new users". countTokens gives the same 404 and costs
+     * nothing: it generates no text and has its own generous limit. So each model is
+     * asked once here, while verifying, instead of failing on someone's images later.
+     * A model that cannot be checked in time, or answers anything else, is kept.
+     */
+    private static function retired_gemini_models( $models, $key, $deadline ) {
+        $retired = array();
+        $body = wp_json_encode( array( 'contents' => array( array( 'parts' => array( array( 'text' => 'ok' ) ) ) ) ) );
+        // One request per model, one after another, so the time is capped. Oldest
+        // versions go first: they are the ones Google retires, so a slow connection
+        // that runs out of time skips only the models least likely to be gone.
+        $deadline = min( $deadline, microtime( true ) + 8 );
+        usort( $models, function ( $a, $b ) { return version_compare( self::gemini_version( $a ), self::gemini_version( $b ) ); } );
+        foreach ( $models as $id ) {
+            $remaining = (int) floor( $deadline - microtime( true ) );
+            if ( $remaining < 3 ) { break; }
+            $response = wp_remote_post( 'https://generativelanguage.googleapis.com/v1beta/models/' . rawurlencode( $id ) . ':countTokens', array( 'headers' => array( 'Content-Type' => 'application/json', 'x-goog-api-key' => $key ), 'body' => $body, 'timeout' => min( 5, $remaining - 1 ), 'redirection' => 0, 'limit_response_size' => 64 * 1024 ) );
+            if ( ! is_wp_error( $response ) && (int) wp_remote_retrieve_response_code( $response ) === 404 ) { $retired[] = $id; }
+        }
+        return $retired;
+    }
+
+    /**
+     * OpenRouter: check the key, then read the catalogue for every model that takes
+     * an image and answers in text, cheapest first.
+     *
+     * The catalogue needs no key, so it proves nothing about one; /key does. What the
+     * catalogue says about each model is kept for processing: the price, for ordering
+     * and for the dropdown, whether it takes a JSON mode, and the lowest reasoning
+     * effort it accepts.
+     */
+    private static function verify_openrouter( $key ) {
+        $failure = function ( $message ) use ( $key ) { return array( 'valid' => false, 'models' => array(), 'message' => self::redact_error( $message, $key ) ); };
+        $args = array( 'headers' => array_merge( array( 'Authorization' => 'Bearer ' . $key ), self::openrouter_headers() ), 'timeout' => 10, 'redirection' => 0, 'limit_response_size' => 64 * 1024 );
+        $response = wp_remote_get( 'https://openrouter.ai/api/v1/key', $args );
+        if ( is_wp_error( $response ) ) { return $failure( 'Could not contact OpenRouter: ' . $response->get_error_message() ); }
+        $code = (int) wp_remote_retrieve_response_code( $response );
+        $account = json_decode( wp_remote_retrieve_body( $response ), true );
+        if ( $code === 401 ) { return $failure( 'OpenRouter did not accept this API key. Previous settings were preserved.' ); }
+        if ( $code !== 200 || ! is_array( $account ) ) {
+            $detail = isset( $account['error']['message'] ) && is_string( $account['error']['message'] ) ? $account['error']['message'] : 'HTTP ' . $code;
+            return $failure( 'Could not verify provider access: ' . $detail . '. Previous settings were preserved.' );
+        }
+        $args['timeout'] = 15;
+        $args['limit_response_size'] = 4 * 1024 * 1024;
+        $response = wp_remote_get( 'https://openrouter.ai/api/v1/models', $args );
+        if ( is_wp_error( $response ) ) { return $failure( 'Could not read the OpenRouter model list: ' . $response->get_error_message() ); }
+        $catalogue = json_decode( wp_remote_retrieve_body( $response ), true );
+        if ( (int) wp_remote_retrieve_response_code( $response ) !== 200 || ! isset( $catalogue['data'] ) || ! is_array( $catalogue['data'] ) ) {
+            return $failure( 'OpenRouter returned an invalid model list. Previous settings were preserved.' );
+        }
+        $details = array();
+        foreach ( $catalogue['data'] as $item ) {
+            $detail = self::openrouter_model_detail( $item );
+            if ( $detail ) { $details[ $item['id'] ] = $detail; }
+        }
+        if ( ! $details ) { return $failure( 'OpenRouter lists no models that can describe images. Previous settings were preserved.' ); }
+        // Cheapest first, like every model list here. Among the free ones OpenRouter's
+        // own free router leads: it picks a free model that can read the image, so
+        // Automatic does not hang on any single free model staying online.
+        uksort( $details, function ( $a, $b ) use ( $details ) {
+            if ( $details[ $a ]['cost'] != $details[ $b ]['cost'] ) { return $details[ $a ]['cost'] < $details[ $b ]['cost'] ? -1 : 1; }
+            if ( ( $a === 'openrouter/free' ) !== ( $b === 'openrouter/free' ) ) { return $a === 'openrouter/free' ? -1 : 1; }
+            return strcmp( $a, $b );
+        } );
+        // is_free_tier means the account has never bought credits.
+        $free_only = ! empty( $account['data']['is_free_tier'] );
+        $note = $free_only
+            ? 'This OpenRouter account has no credits, so only the free models will work: 50 requests a day.'
+            : 'Paid models use your OpenRouter credits. Free models allow 1,000 requests a day.';
+        return array( 'valid' => true, 'models' => array_keys( $details ), 'details' => $details, 'message' => 'API key verified. ' . $note, 'note' => $note );
+    }
+
+    /**
+     * What processing needs to know about one OpenRouter catalogue entry, or null
+     * when the model cannot describe an image.
+     */
+    private static function openrouter_model_detail( $item ) {
+        if ( ! is_array( $item ) || ! isset( $item['id'] ) || ! self::is_metadata_model( 'openrouter', $item['id'] ) ) { return null; }
+        $in  = isset( $item['architecture']['input_modalities'] ) && is_array( $item['architecture']['input_modalities'] ) ? $item['architecture']['input_modalities'] : array();
+        $out = isset( $item['architecture']['output_modalities'] ) && is_array( $item['architecture']['output_modalities'] ) ? array_values( $item['architecture']['output_modalities'] ) : array();
+        if ( ! in_array( 'image', $in, true ) || $out !== array( 'text' ) ) { return null; }
+        if ( ! isset( $item['pricing']['prompt'], $item['pricing']['completion'] ) || ! is_numeric( $item['pricing']['prompt'] ) || ! is_numeric( $item['pricing']['completion'] ) ) { return null; }
+        $prompt = (float) $item['pricing']['prompt'];
+        $completion = (float) $item['pricing']['completion'];
+        // A negative price marks a router whose price depends on where it sends the request.
+        if ( $prompt < 0 || $completion < 0 ) { return null; }
+        if ( ! empty( $item['expiration_date'] ) && is_string( $item['expiration_date'] ) ) {
+            $expires = strtotime( $item['expiration_date'] . ' 23:59:59 UTC' );
+            if ( $expires !== false && $expires < time() ) { return null; }
+        }
+        $params = isset( $item['supported_parameters'] ) && is_array( $item['supported_parameters'] ) ? $item['supported_parameters'] : array();
+        return array(
+            'prompt'     => $prompt,
+            'completion' => $completion,
+            // Rough cost of one image: about 1,300 tokens in (image and prompt), 200 out.
+            'cost'       => $prompt * 1300 + $completion * 200,
+            'json'       => in_array( 'response_format', $params, true ) ? 1 : 0,
+            'effort'     => self::lowest_reasoning_effort( isset( $item['reasoning'] ) ? $item['reasoning'] : null, $params ),
+        );
+    }
+
+    /**
+     * The least reasoning a model accepts, or '' to leave its default alone.
+     *
+     * Describing a picture needs no reasoning, and reasoning tokens are billed and
+     * share max_tokens with the answer. "none" is never sent to a model whose
+     * reasoning is mandatory: it rejects it.
+     */
+    private static function lowest_reasoning_effort( $reasoning, $params ) {
+        if ( ! in_array( 'reasoning', $params, true ) || ! is_array( $reasoning ) || empty( $reasoning['supported_efforts'] ) || ! is_array( $reasoning['supported_efforts'] ) ) { return ''; }
+        foreach ( array( 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max' ) as $effort ) {
+            if ( $effort === 'none' && ! empty( $reasoning['mandatory'] ) ) { continue; }
+            if ( in_array( $effort, $reasoning['supported_efforts'], true ) ) { return $effort; }
+        }
+        return '';
     }
 }

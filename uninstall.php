@@ -3,7 +3,7 @@
 if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) { exit; }
 
 function altgenix_uninstall_site() {
-    foreach ( array( 'altgenix_settings', 'altgenix_valid_models', 'altgenix_models_context', 'altgenix_working_model', 'altgenix_feedback', 'altgenix_data_version', 'altgenix_services_dismissed' ) as $option ) { delete_option( $option ); }
+    foreach ( array( 'altgenix_settings', 'altgenix_valid_models', 'altgenix_models_context', 'altgenix_model_details', 'altgenix_unavailable_models', 'altgenix_working_model', 'altgenix_feedback', 'altgenix_data_version', 'altgenix_services_dismissed' ) as $option ) { delete_option( $option ); }
     wp_unschedule_hook( 'altgenix_background_process_image' );
     global $wpdb;
     // Discover plugin-owned transient/lock names, then use APIs to invalidate caches.

@@ -4,19 +4,20 @@ Tags: auto alt text, seo, image optimization, openai, claude
 Requires at least: 5.8
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.2.2
+Stable tag: 1.3.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Auto-generate SEO-optimized Alt Text, Titles, Captions and rename image files using Google Gemini, OpenAI, Anthropic Claude, or DeepSeek AI.
+Auto-generate SEO-optimized Alt Text, Titles, Captions and file names with Google Gemini, OpenAI, Anthropic Claude, DeepSeek or OpenRouter.
 
 == Description ==
 
 AltGenix generates image alt text, titles, captions and descriptions from a filename or your selected AI provider. Review generated text for accuracy and accessibility before publishing.
 
-* Choose Google Gemini, OpenAI, Anthropic Claude or DeepSeek with your own API key.
+* Choose Google Gemini, OpenAI, Anthropic Claude, DeepSeek or OpenRouter with your own API key. OpenRouter gives one key access to a few hundred vision models, cheapest first, including free ones.
 * Enable each metadata field separately and choose the output language and length.
 * Automatically process new uploads after WordPress finishes preparing them, or run through pending images in the Bulk Optimizer.
+* Filter the Bulk Optimizer by status, upload month, missing alt text or file name, and process just the filtered images. Built for libraries with tens of thousands of images.
 * Retry failed images without losing existing metadata. Bulk runs continue past failed batches.
 * Optional AI filename generation copies the main image, original and thumbnails to new names. Existing embeds continue to use retained files, so old URLs remain valid. Copies require additional disk space.
 * File renaming does not perform global search-and-replace in posts, builder data, serialized metadata or attachment GUIDs. New attachment-based output uses the current filename; existing hardcoded URLs retain the previous name.
@@ -33,16 +34,23 @@ AltGenix generates image alt text, titles, captions and descriptions from a file
 
 == External Services ==
 
-Filename mode makes no AI requests. AI mode sends a local image copy and the generation prompt (including any custom prompt) only to your selected provider. The API key authenticates these requests. Verification requests send the key to the provider's model-list endpoint; they do not generate an image or description. Model discovery does not guarantee credits, generation permissions or service availability.
+Filename mode makes no AI requests. AI mode sends a local image copy and the generation prompt (including any custom prompt) only to your selected provider. The API key authenticates these requests. Verification requests send the key to the provider's model-list endpoint (for OpenRouter, its key-information endpoint, plus its public model list); they do not generate an image or description. For Google Gemini, verification also calls the free countTokens endpoint once per model with the word "ok", to leave out models Google no longer serves to that key. Model discovery does not guarantee credits, generation permissions or service availability.
 
 * Google Gemini: https://ai.google.dev/ | Terms: https://ai.google.dev/gemini-api/terms | Privacy: https://policies.google.com/privacy
 * OpenAI: https://openai.com/api/ | Terms: https://openai.com/policies/terms-of-use | Privacy: https://openai.com/policies/privacy-policy
 * Anthropic Claude: https://www.anthropic.com/ | Terms: https://www.anthropic.com/legal/commercial-terms | Privacy: https://www.anthropic.com/legal/privacy
 * DeepSeek: https://api-docs.deepseek.com/ | Terms: https://cdn.deepseek.com/policies/en-US/deepseek-terms-of-use.html | Privacy: https://cdn.deepseek.com/policies/en-US/deepseek-privacy-policy.html
+* OpenRouter: https://openrouter.ai/ | Terms: https://openrouter.ai/terms | Privacy: https://openrouter.ai/privacy . OpenRouter passes each request to the company behind the model you choose, whose own terms also apply. Requests identify the plugin to OpenRouter by its WordPress.org address; your site address is not sent.
 
 Optional feedback is sent only when you click Submit Feedback. It emails your message, rating, site URL, WordPress account email, plugin version and provider name to the developer at abdulkabeer2530@gmail.com using your site's mail transport. API keys are not included. Public reviews are available regardless of your rating. Service links open only when clicked; no advertising trackers or remote assets are loaded by the plugin.
 
 == Frequently Asked Questions ==
+
+= Can I use free models? =
+Yes, through OpenRouter. Its free models are limited by OpenRouter to 50 requests a day, or 1,000 a day once the account has bought $10 of credit. That suits small sites and testing; for a large library choose one of the low-cost paid models, which the model list shows with their prices. Free models are less reliable than paid ones, so on Automatic an image that one free model fails is passed to the next free model.
+
+= Why did a model disappear from my list? =
+Providers keep some models in their catalogue that a key cannot use: Google lists retired models such as gemini-2.5-pro to new keys, and free Gemini keys have no quota for the Pro models. AltGenix leaves out the retired ones when it verifies the key, and hides any other model the first time the provider refuses it. Such a refusal is not billed. Click Verify & Refresh Models after upgrading a key to see every model again.
 
 = What happens if the AI fails? =
 Existing metadata is preserved and the image remains in the Failed list for an explicit retry. No failed, incomplete, refused or malformed AI response is marked as successfully optimized. Choose Filename mode explicitly if you want metadata derived from filenames.
@@ -70,12 +78,16 @@ Settings and queues are per-site. Network uninstall clears plugin settings, jobs
 
 == Screenshots ==
 
-1. Configure AltGenix AI Image SEO, choose your provider and model, and manage API verification.
-2. Bulk optimize multiple images with selection controls, status badges, and bulk actions.
-3. Generate image metadata directly from the WordPress Media Library attachment details screen.
-4. Choose exactly which image fields to regenerate, including filename options, from a focused popup.
+1. Choose the AI provider and model and verify your API key. With OpenRouter, each model shows its price.
+2. Filter the Bulk Optimizer by status, upload month, missing alt text or file name, then process only those images.
+3. Generate alt text, title, caption and description from the Media Library's attachment details.
+4. Choose exactly which fields to regenerate, including the file name, before anything is changed.
+5. Search OpenRouter's image models by name, listed cheapest first with their prices.
 
 == Upgrade Notice ==
+
+= 1.3.0 =
+Adds OpenRouter and Bulk Optimizer filters, and fixes the "model is no longer available" errors some Gemini models give. Recommended for everyone.
 
 = 1.2.2 =
 Fixes generated text being put back to the old values when an attachment is updated, broken image sizes in posts after a file rename, and a Remove Key button that did not remove the key. Recommended for everyone.
@@ -87,6 +99,20 @@ Fixes two faults introduced in 1.2.0: image uploads could hang on "Crunching..."
 Security and data-integrity fixes: server-side keys, safe file copies, reliable queues and strict AI validation. Rotate keys if a previous build exposed them to untrusted uploaders. Back up and test on staging first.
 
 == Changelog ==
+
+= 1.3.0 =
+* New: OpenRouter as a fifth AI provider. One key gives access to a few hundred models that can read images, listed cheapest first with their prices and searchable by name. Free models are included, within OpenRouter's daily limits. Requested on the support forum.
+* New: On Automatic, when a free OpenRouter model fails an image (an answer that is not usable, a busy model, or no answer in time), the next free model tries the same image, up to three in all. Free models cost nothing, so this never adds to a bill, and it never moves on to a paid model.
+* New: Bulk Optimizer filters for upload month, missing or existing alt text, and a search by file name, title or alt text. They work together with the status filter. Requested on the support forum.
+* New: With filters on, the main button becomes "Process filtered" and works through only those images, so a large library can be done in parts.
+* Fix: Gemini models that Google has retired, such as gemini-2.5-pro, failed every image with "This model is no longer available to new users". They are now left out of the model list when the key is verified, at no cost.
+* Fix: A model the key cannot use, retired or without quota on a free key, is now hidden after its first refusal, which is not billed. On Automatic, the next model takes over for that image. A model you chose yourself is never swapped behind your back: processing stops, and Settings shows it as no longer available until you pick another.
+* Fix: A free Gemini key's "limit: 0" quota on Pro models was treated as a busy model and retried. It now explains that the key has no quota for that model.
+* Fix: A bulk run now stops at the first error that would hit every image, such as an invalid key, no credit left or an unavailable model, instead of marking the whole library Failed with the same message.
+* Fix: A timed-out request now says the provider did not answer in time and that nothing was changed, instead of showing the raw cURL error.
+* Fix: "Mark as done" now says why an image was skipped: already done, still being processed after upload, or being processed right now.
+* Fix: In the Gemini model list a stable model is now listed before its preview of the same version.
+* Change: A new look that follows WordPress's own admin design, and a shorter, quieter note from the developer.
 
 = 1.2.2 =
 * Fix: On the attachment edit screen, clicking Update after generating no longer puts the old Title and Alt Text back. The form now shows the new text as soon as it is generated.

@@ -1,85 +1,125 @@
-/* AltGenix AI Image SEO Premium UI */
-.altgenix-saas-wrap { font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif; max-width: 100%; margin: 30px 20px 0 0; color: #333; }
-.altgenix-header { display: flex; justify-content: start; align-items: center; margin-bottom: 25px; gap:20px; }
+/* AltGenix AI Image SEO admin styles.
+   Built to sit inside wp-admin rather than on top of it: WordPress's own colours,
+   type, borders and radii, and none of the gradients, glows or animations that
+   made the screens look like a template. The accent is WordPress's own: the
+   --wp-admin-theme-color variable where it is set, otherwise the default blue of
+   the site's WordPress version, which the plugin adds inline when it enqueues this
+   file (#3858e9 from 7.0, #2271b1 before). The values below are the pre-7.0 ones.
+   Declared on body, not :root: WordPress sets the scheme colour on
+   body.admin-color-*, and a variable read at :root would only ever see the fallback. */
+body {
+    --agx-accent: var(--wp-admin-theme-color, #2271b1);
+    --agx-accent-dark: var(--wp-admin-theme-color-darker-10, #135e96);
+    --agx-accent-soft: #f0f6fc;
+    --agx-text: #1d2327;
+    --agx-text-2: #3c434a;
+    --agx-muted: #646970;
+    --agx-control: #8c8f94;
+    --agx-border: #c3c4c7;
+    --agx-border-soft: #dcdcde;
+    --agx-line: #f0f0f1;
+    --agx-panel: #f6f7f7;
+    --agx-success: #00a32a;
+    --agx-success-text: #007017;
+    --agx-success-bg: #edfaef;
+    --agx-warning: #dba617;
+    --agx-warning-text: #996800;
+    --agx-warning-bg: #fcf9e8;
+    --agx-error: #d63638;
+    --agx-error-text: #b32d2e;
+    --agx-error-bg: #fcf0f1;
+}
+
+.altgenix-saas-wrap { max-width: 100%; margin: 20px 20px 0 0; color: var(--agx-text-2); }
+.altgenix-header { display: flex; justify-content: start; align-items: center; margin-bottom: 20px; gap: 14px; }
 .altgenix-header .altgenix-logo{ width:70px;}
-.altgenix-header h2 { font-size: 24px; font-weight: 700; margin: 0; }
-.altgenix-card { background: #fff; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.03); padding: 30px; margin-bottom: 30px; border: 1px solid #f0f0f0; }
+.altgenix-header h2 { font-size: 23px; font-weight: 400; line-height: 1.3; margin: 0; color: var(--agx-text); }
+.altgenix-card { background: #fff; border: 1px solid var(--agx-border); border-radius: 4px; box-shadow: 0 1px 1px rgba(0, 0, 0, .04); padding: 24px; margin-bottom: 20px; }
 
 /* Forms */
-.altgenix-form-row { margin: 0; padding-bottom: 22px; }
-.altgenix-form-row + .altgenix-form-row { border-top: 1px solid #f1f3f5; padding-top: 22px; }
-.altgenix-input-group label { display: block; font-weight: 600; margin-bottom: 8px; color: #495057; }
-.altgenix-input-group input, .altgenix-input-group textarea { width: 100%; padding: 12px 15px; border: 1px solid #ced4da; border-radius: 8px; font-size: 14px; background: #f8f9fa; transition: border-color 0.3s; }
-.altgenix-input-group input:focus, .altgenix-input-group textarea:focus { border-color: #6366f1; outline: none; box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1); }
+.altgenix-form-row { margin: 0; padding-bottom: 20px; }
+.altgenix-form-row + .altgenix-form-row { border-top: 1px solid var(--agx-line); padding-top: 20px; }
+.altgenix-input-group label { display: block; font-weight: 600; margin-bottom: 8px; color: var(--agx-text); }
+.altgenix-input-group input, .altgenix-input-group textarea { width: 100%; padding: 6px 10px; border: 1px solid var(--agx-control); border-radius: 4px; font-size: 14px; background: #fff; }
+.altgenix-input-group input:focus, .altgenix-input-group textarea:focus { border-color: var(--agx-accent); outline: 2px solid transparent; box-shadow: 0 0 0 1px var(--agx-accent); }
 
 /* Buttons */
 /* The save bar rides the bottom of the viewport rather than sitting at the end of
    a long form, so Save is reachable from any tab without scrolling to find it. */
-.altgenix-form-actions { position: sticky; bottom: 0; z-index: 20; display: flex; justify-content: flex-end; align-items: center; gap: 14px; margin: 0; padding: 14px 0; background: rgba(248, 249, 250, 0.94); backdrop-filter: blur(6px); border-top: 1px solid #e6e8eb; }
-.altgenix-btn-primary { background: #6366f1; color: white; border: none; padding: 10px 24px; border-radius: 8px; font-size: 15px; cursor: pointer; font-weight: 500; transition: 0.3s; }
-.altgenix-btn-primary:hover { background: #4f46e5; transform: translateY(-1px); }
-.altgenix-btn-secondary { background: #e0e7ff; color: #4f46e5; border: none; padding: 8px 16px; border-radius: 8px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 5px; }
-.altgenix-btn-outline { background: transparent; border: 1px solid #ced4da; padding: 8px 16px; border-radius: 8px; cursor: pointer; }
+.altgenix-form-actions { position: sticky; bottom: 0; z-index: 20; display: flex; justify-content: flex-end; align-items: center; gap: 14px; margin: 0; padding: 12px 0; background: #f0f0f1; border-top: 1px solid var(--agx-border); }
+.altgenix-btn-primary,
+.altgenix-btn-secondary,
+.altgenix-btn-outline,
+.altgenix-btn-danger { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 34px; padding: 0 14px; border-radius: 3px; border: 1px solid transparent; font-size: 13px; font-weight: 500; line-height: 1.4; cursor: pointer; box-sizing: border-box; white-space: nowrap; text-decoration: none; transition: background-color .1s ease, border-color .1s ease, color .1s ease; }
+.altgenix-btn-primary { background: var(--agx-accent); border-color: var(--agx-accent); color: #fff; }
+.altgenix-btn-primary:hover { background: var(--agx-accent-dark); border-color: var(--agx-accent-dark); color: #fff; }
+.altgenix-btn-secondary { background: var(--agx-panel); border-color: var(--agx-accent); color: var(--agx-accent); }
+.altgenix-btn-secondary:hover { background: var(--agx-line); border-color: var(--agx-accent-dark); color: var(--agx-accent-dark); }
+.altgenix-btn-outline { background: #fff; border-color: var(--agx-control); color: #2c3338; }
+.altgenix-btn-outline:hover { border-color: var(--agx-accent); color: var(--agx-accent); }
+.altgenix-btn-primary .dashicons,
+.altgenix-btn-secondary .dashicons,
+.altgenix-btn-outline .dashicons { font-size: 16px; width: 16px; height: 16px; }
+.altgenix-btn-primary:focus-visible,
+.altgenix-btn-secondary:focus-visible,
+.altgenix-btn-outline:focus-visible,
+.altgenix-btn-danger:focus-visible { outline: 2px solid transparent; box-shadow: 0 0 0 1px #fff, 0 0 0 3px var(--agx-accent); }
 
 /* A switched-off button that still looks clickable is worse than no button: the
    only feedback for pressing it is nothing happening. This covers the modal's
    confirm button (off until a field is ticked) and Save during a save. The
    :hover pairs are here because the base :hover rules would otherwise repaint
-   and lift a disabled button under the pointer. */
+   a disabled button under the pointer. */
 .altgenix-btn-primary:disabled,
 .altgenix-btn-primary[disabled],
 .altgenix-btn-secondary:disabled,
 .altgenix-btn-secondary[disabled],
 .altgenix-btn-outline:disabled,
-.altgenix-btn-outline[disabled] { opacity: .55; cursor: not-allowed; box-shadow: none; }
+.altgenix-btn-outline[disabled] { background: var(--agx-panel); border-color: var(--agx-border-soft); color: #a7aaad; cursor: not-allowed; box-shadow: none; }
 .altgenix-btn-primary:disabled:hover,
-.altgenix-btn-primary[disabled]:hover { background: #6366f1; transform: none; }
+.altgenix-btn-primary[disabled]:hover,
 .altgenix-btn-secondary:disabled:hover,
-.altgenix-btn-secondary[disabled]:hover { background: #e0e7ff; color: #4f46e5; }
+.altgenix-btn-secondary[disabled]:hover,
 .altgenix-btn-outline:disabled:hover,
-.altgenix-btn-outline[disabled]:hover { border-color: #ced4da; }
+.altgenix-btn-outline[disabled]:hover { background: var(--agx-panel); border-color: var(--agx-border-soft); color: #a7aaad; }
 
 /* Table Design */
-.altgenix-table-toolbar { display: flex; justify-content: space-between; margin-bottom: 20px; }
+.altgenix-table-toolbar { display: flex; justify-content: space-between; margin-bottom: 16px; }
 .altgenix-table-filters { display: flex; align-items: center; }
 .altgenix-table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 /* Seven columns will not fit a narrow screen. Given the choice between scrolling
    the table and breaking the page layout, scroll the table. */
 .altgenix-table { width: 100%; min-width: 720px; border-collapse: collapse; }
-.altgenix-table th { text-align: left; padding: 15px; color: #6c757d; font-size: 13px; border-bottom: 2px solid #f8f9fa; text-transform: uppercase; }
-.altgenix-table td { padding: 15px; border-bottom: 1px solid #f8f9fa; vertical-align: middle; }
-.altgenix-img-thumb { width: 40px; height: 40px; background: #f0f2f5; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #adb5bd; overflow: hidden; }
+.altgenix-table th { text-align: left; padding: 10px 12px; color: var(--agx-text); font-size: 13px; font-weight: 600; border-bottom: 1px solid var(--agx-border); }
+.altgenix-table td { padding: 10px 12px; border-bottom: 1px solid var(--agx-line); vertical-align: middle; }
+.altgenix-table tbody tr:hover td { background: var(--agx-panel); }
+.altgenix-img-thumb { width: 40px; height: 40px; background: var(--agx-line); border-radius: 2px; display: flex; align-items: center; justify-content: center; color: var(--agx-control); overflow: hidden; }
 .altgenix-img-thumb img { width: 100%; height: 100%; object-fit: cover; }
-.altgenix-text-muted { color: #6c757d; font-size: 13px; }
+.altgenix-text-muted { color: var(--agx-muted); font-size: 13px; }
 
 /* Badges */
-.altgenix-badge { padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; }
-.altgenix-badge-success { background: #d1fae5; color: #059669; }
-.altgenix-badge-danger { background: #fee2e2; color: #dc2626; }
-.altgenix-badge-warning { background: #fef3c7; color: #d97706; }
+.altgenix-badge { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 12px; font-weight: 500; line-height: 1.6; white-space: nowrap; }
+.altgenix-badge-success { background: var(--agx-success-bg); color: var(--agx-success-text); }
+.altgenix-badge-danger { background: var(--agx-error-bg); color: var(--agx-error-text); }
+.altgenix-badge-warning { background: var(--agx-warning-bg); color: var(--agx-warning-text); }
 
 /* Actions */
-.altgenix-action-icon { background: transparent; border: none; color: #adb5bd; cursor: pointer; margin-right: 5px; text-decoration: none;}
-.altgenix-action-icon:hover { color: #dc2626; }
+.altgenix-action-icon { background: transparent; border: none; color: var(--agx-muted); cursor: pointer; margin-right: 4px; padding: 2px; border-radius: 3px; text-decoration: none; }
+.altgenix-action-icon:hover { color: var(--agx-accent); }
+.altgenix-action-icon:focus-visible { outline: 2px solid transparent; box-shadow: 0 0 0 2px var(--agx-accent); }
 
 /* Scoped to the table's icon buttons. Unscoped they also hit the media-screen
-   buttons, where the same class sits on a solid indigo button. */
-.altgenix-action-icon.altgenix-regenerate-btn { color: #6366f1; }
-.altgenix-action-icon.altgenix-regenerate-btn:hover { color: #4f46e5; background: #e0e7ff; border-radius: 4px; }
-.altgenix-action-icon.altgenix-rename-btn { color: #f59e0b; }
-.altgenix-action-icon.altgenix-rename-btn:hover { color: #d97706; background: #fef3c7; border-radius: 4px; }
+   buttons, where the same class sits on a solid primary button. */
+.altgenix-action-icon.altgenix-regenerate-btn { color: var(--agx-accent); }
+.altgenix-action-icon.altgenix-regenerate-btn:hover { color: var(--agx-accent-dark); background: var(--agx-accent-soft); }
+.altgenix-action-icon.altgenix-rename-btn { color: var(--agx-warning-text); }
+.altgenix-action-icon.altgenix-rename-btn:hover { color: #6e4e00; background: var(--agx-warning-bg); }
 
-/* Media Library and attachment screens. The whole design used to be inline
-   !important declarations, which also beat core's own :hover — so the button did
-   not react to the pointer at all. Class selectors outweigh core's .button-primary
-   without needing !important. */
+/* Media Library and attachment screens. These are core primary buttons and keep
+   core's colours, which follow the person's admin colour scheme; only the layout
+   is set here. The whole design used to be inline !important declarations, which
+   also beat core's own :hover, so the button did not react to the pointer. */
 .altgenix-media-btn.button.button-primary {
-    background: #6366f1;
-    border-color: #4f46e5;
-    color: #fff;
-    text-shadow: none;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    border-radius: 6px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -88,26 +128,6 @@
     height: auto;
     min-height: 32px;
 }
-.altgenix-media-btn.button.button-primary:hover {
-    background: #4f46e5;
-    border-color: #4338ca;
-    color: #fff;
-    box-shadow: 0 3px 6px rgba(0,0,0,0.14);
-}
-.altgenix-media-btn.button.button-primary:focus {
-    background: #4f46e5;
-    border-color: #4338ca;
-    color: #fff;
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.35);
-}
-/* The indigo glow alone is hard to see against a white page. Keyboard focus gets a
-   real outline as well; :focus-visible keeps it off mouse clicks. */
-.altgenix-media-btn.button.button-primary:focus-visible {
-    outline: 2px solid #1d2327;
-    outline-offset: 2px;
-}
-.altgenix-media-btn.button.button-primary:disabled,
-.altgenix-media-btn.button.button-primary[disabled] { background: #a5b4fc; border-color: #a5b4fc; color: #fff; }
 .altgenix-media-btn .dashicons { display: flex; align-items: center; justify-content: center; }
 .altgenix-media-btn.altgenix-media-btn-block.button { display: flex; width: 100%; }
 
@@ -135,30 +155,26 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
-    background-color: #ffffff;
-    border: 1px solid #ced4da;
-    border-radius: 10px;
-    height: 44px;
-    padding: 0 16px;
-    font-size: 14.5px;
-    font-weight: 500;
-    color: #334155;
+    gap: 10px;
+    background-color: #fff;
+    border: 1px solid var(--agx-control);
+    border-radius: 4px;
+    height: 36px;
+    padding: 0 10px 0 12px;
+    font-size: 14px;
+    font-weight: 400;
+    color: #2c3338;
     cursor: pointer;
     box-sizing: border-box;
-    transition: all 0.2s ease;
     text-align: left;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.03);
 }
 .altgenix-select-btn:hover {
-    border-color: #cbd5e1;
-    background-color: #f8fafc;
+    border-color: var(--agx-muted);
 }
 .altgenix-select-btn:focus, .altgenix-custom-select.open .altgenix-select-btn {
-    border-color: #6366f1;
-    box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.12);
-    outline: none;
-    background-color: #ffffff;
+    border-color: var(--agx-accent);
+    box-shadow: 0 0 0 1px var(--agx-accent);
+    outline: 2px solid transparent;
 }
 .altgenix-select-btn span {
     white-space: nowrap;
@@ -166,167 +182,190 @@
     text-overflow: ellipsis;
 }
 .altgenix-select-btn svg {
-    width: 18px;
-    height: 18px;
-    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    color: #94a3b8;
+    flex: none;
+    width: 16px;
+    height: 16px;
+    color: #50575e;
 }
 .altgenix-custom-select.open .altgenix-select-btn svg {
     transform: rotate(180deg);
 }
 .altgenix-select-menu {
     position: absolute;
-    top: calc(100% + 6px);
+    top: calc(100% + 4px);
     left: 0;
     width: 100%;
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
-    border-radius: 12px;
-    box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.05);
+    min-width: 180px;
+    background: #fff;
+    border: 1px solid var(--agx-border);
+    border-radius: 4px;
+    box-shadow: 0 3px 8px rgba(0, 0, 0, .12);
     margin: 0;
-    padding: 6px;
+    padding: 4px;
     list-style: none;
-    max-height: 280px;
+    max-height: 300px;
     overflow-y: auto;
     z-index: 9999;
-    opacity: 0;
-    visibility: hidden;
-    transform: translateY(-8px) scale(0.98);
-    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    display: none;
     box-sizing: border-box;
 }
 .altgenix-custom-select.open .altgenix-select-menu {
-    opacity: 1;
-    visibility: visible;
-    transform: translateY(0) scale(1);
+    display: block;
 }
 .altgenix-select-option {
-    padding: 10px 14px;
-    font-size: 14px;
-    color: #334155;
+    padding: 7px 10px;
+    font-size: 13px;
+    line-height: 1.4;
+    color: #2c3338;
     cursor: pointer;
-    border-radius: 8px;
-    transition: background 0.15s, color 0.15s;
-    margin-bottom: 2px;
+    border-radius: 2px;
+    margin: 0 0 1px;
 }
 .altgenix-select-option:last-child {
     margin-bottom: 0;
 }
 .altgenix-select-option:hover,
 .altgenix-select-option:focus {
-    background: #f1f5f9;
-    color: #0f172a;
+    background: var(--agx-line);
+    color: var(--agx-text);
     outline: none;
 }
+.altgenix-select-option:focus-visible {
+    box-shadow: inset 0 0 0 1px var(--agx-accent);
+}
 .altgenix-select-option.disabled {
-    opacity: 0.48;
+    opacity: .5;
     cursor: not-allowed;
 }
 .altgenix-select-option.selected {
-    background: #eef2ff;
-    color: #4f46e5;
+    background: var(--agx-accent-soft);
+    color: var(--agx-accent-dark);
     font-weight: 600;
 }
+/* Long lists (OpenRouter's few hundred models) get a filter box that stays put
+   at the top while the list scrolls under it. */
+.altgenix-select-search {
+    position: sticky;
+    top: -4px;
+    z-index: 1;
+    margin: -4px -4px 4px;
+    padding: 6px;
+    background: #fff;
+    border-bottom: 1px solid var(--agx-line);
+}
+/* Element + class, so this outranks core's input[type=text] rules, which load first. */
+input.altgenix-select-search-input {
+    width: 100%;
+    min-height: 30px;
+    padding: 2px 8px;
+    border: 1px solid var(--agx-control);
+    border-radius: 3px;
+    font-size: 13px;
+    box-sizing: border-box;
+}
+input.altgenix-select-search-input:focus {
+    border-color: var(--agx-accent);
+    box-shadow: 0 0 0 1px var(--agx-accent);
+    outline: 2px solid transparent;
+}
+.altgenix-select-option.is-filtered { display: none; }
+.altgenix-select-empty { padding: 8px 10px; font-size: 13px; color: var(--agx-muted); }
+.altgenix-select-empty[hidden] { display: none; }
 
 /* Pagination */
-.altgenix-pagination { margin-top: 20px; display: flex; justify-content: flex-end; gap: 5px; }
-.altgenix-pagination a, .altgenix-pagination span { padding: 8px 12px; border: 1px solid #e2e4e7; border-radius: 6px; text-decoration: none; color: #495057; font-weight: 500; font-size: 13px; transition: 0.3s; }
-.altgenix-pagination .current { background: #6366f1; color: #fff; border-color: #6366f1; }
-.altgenix-pagination a:hover { background: #f8f9fa; border-color: #ced4da; }
+.altgenix-pagination { margin-top: 16px; display: flex; justify-content: flex-end; gap: 4px; }
+.altgenix-pagination a, .altgenix-pagination span { min-width: 30px; box-sizing: border-box; text-align: center; padding: 5px 9px; border: 1px solid var(--agx-border); border-radius: 3px; background: #fff; text-decoration: none; color: var(--agx-accent); font-size: 13px; line-height: 1.4; }
+.altgenix-pagination .current { background: var(--agx-accent); color: #fff; border-color: var(--agx-accent); }
+.altgenix-pagination .dots { border-color: transparent; background: transparent; color: var(--agx-muted); }
+.altgenix-pagination a:hover { border-color: var(--agx-accent); background: var(--agx-panel); }
 
 /* Animations */
-.altgenix-spin::before { 
-    animation: altgenix-spin 1.5s linear infinite; 
+.altgenix-spin::before {
+    animation: altgenix-spin 1.2s linear infinite;
     display: inline-block;
     transform-origin: center center;
 }
 @keyframes altgenix-spin { 100% { transform: rotate(360deg); } }
 
-/* Premium Modal Overlay & Box */
-.altgenix-modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 1000000; opacity: 0; visibility: hidden; transition: all 0.3s ease; }
+/* Modal */
+.altgenix-modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, .6); display: flex; align-items: center; justify-content: center; z-index: 1000000; opacity: 0; visibility: hidden; transition: opacity .15s ease, visibility .15s ease; }
 .altgenix-modal-overlay.show { opacity: 1; visibility: visible; }
-.altgenix-modal-box { background: #fff; width: 400px; padding: 30px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); transform: translateY(20px); transition: all 0.3s ease; }
-.altgenix-modal-overlay.show .altgenix-modal-box { transform: translateY(0); }
-.altgenix-modal-box h3 { margin: 0 0 15px 0; font-size: 20px; color: #1d2327; }
-.altgenix-modal-box p { color: #6c757d; font-size: 15px; margin-bottom: 25px; }
-.altgenix-modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
-.notice{margin-bottom: 30px;}
+.altgenix-modal-box { background: #fff; width: 440px; max-width: calc(100% - 32px); box-sizing: border-box; padding: 24px; border-radius: 4px; box-shadow: 0 3px 30px rgba(0, 0, 0, .25); }
+.altgenix-modal-box h3 { margin: 0 0 12px 0; font-size: 18px; font-weight: 600; color: var(--agx-text); }
+.altgenix-modal-box p { color: #50575e; font-size: 14px; line-height: 1.6; margin: 0 0 22px; }
+.altgenix-modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.notice{margin-bottom: 20px;}
 
 /* Custom Input Wrappers & Readonly UI */
-.altgenix-form-row > label:not(.altgenix-switch) { display: block; font-weight: 600; font-size: 13px; letter-spacing: .01em; margin: 0 0 10px; color: #1d2327; }
+.altgenix-form-row > label:not(.altgenix-switch) { display: block; font-weight: 600; font-size: 13px; margin: 0 0 8px; color: var(--agx-text); }
 .altgenix-input-wrapper { position: relative; display: flex; align-items: center; width: 100%; }
-.altgenix-input-wrapper input, .altgenix-input-wrapper textarea { width: 100%; padding: 12px 15px; border: 1px solid #ced4da; border-radius: 8px; font-size: 14px; background: #fff; transition: border-color 0.3s; padding-right: 80px; }
-.altgenix-input-wrapper input:focus, .altgenix-input-wrapper textarea:focus { border-color: #6366f1; outline: none; box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1); }
-.altgenix-input-wrapper input[readonly], .altgenix-input-wrapper textarea[readonly] { background-color: #f1f3f5; color: #6c757d; cursor: not-allowed; border-color: #e9ecef; }
-.altgenix-action-btn { position: absolute; background: transparent; border: none; cursor: pointer; color: #adb5bd; padding: 5px; right: 10px; display: flex; align-items: center; justify-content: center; }
-.altgenix-toggle-eye { right: 40px; }
-.altgenix-action-btn:hover { color: #6366f1; }
+.altgenix-input-wrapper input, .altgenix-input-wrapper textarea { width: 100%; min-height: 36px; padding: 6px 80px 6px 12px; border: 1px solid var(--agx-control); border-radius: 4px; font-size: 14px; background: #fff; box-sizing: border-box; }
+.altgenix-input-wrapper input:focus, .altgenix-input-wrapper textarea:focus { border-color: var(--agx-accent); outline: 2px solid transparent; box-shadow: 0 0 0 1px var(--agx-accent); }
+.altgenix-input-wrapper input[readonly], .altgenix-input-wrapper textarea[readonly] { background-color: var(--agx-panel); color: var(--agx-muted); cursor: not-allowed; border-color: var(--agx-border-soft); }
+.altgenix-action-btn { position: absolute; background: transparent; border: none; cursor: pointer; color: var(--agx-control); padding: 5px; right: 8px; display: flex; align-items: center; justify-content: center; border-radius: 3px; }
+.altgenix-toggle-eye { right: 38px; }
+.altgenix-action-btn:hover { color: var(--agx-accent); }
+.altgenix-action-btn:focus-visible { outline: 2px solid transparent; box-shadow: 0 0 0 2px var(--agx-accent); }
 .altgenix-textarea-edit { top: 10px; }
 .altgenix-input-wrapper input.altgenix-api-key-saved[readonly] {
-    background: #f8fffb;
-    border-color: #a7f3d0;
+    background: var(--agx-panel);
+    border-color: var(--agx-border);
+    color: var(--agx-text-2);
     cursor: default;
 }
 .altgenix-input-wrapper input.altgenix-api-key-saved::placeholder {
-    color: #64748b;
+    color: var(--agx-muted);
     opacity: 1;
-    letter-spacing: 0.16em;
-    font-weight: 600;
+    letter-spacing: .14em;
 }
 .altgenix-api-key-status {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    margin: 9px 0 0;
-    padding: 5px 9px;
-    border-radius: 999px;
-    background: #ecfdf5;
-    color: #047857;
-    font-size: 12px;
-    font-weight: 600;
-    line-height: 1.35;
+    gap: 4px;
+    margin: 8px 0 0;
+    color: var(--agx-success-text);
+    font-size: 13px;
+    line-height: 1.4;
 }
 .altgenix-api-key-status .dashicons {
-    width: 15px;
-    height: 15px;
-    font-size: 15px;
+    width: 16px;
+    height: 16px;
+    font-size: 16px;
 }
 .altgenix-api-key-status.pending-removal {
-    background: #fff7ed;
-    color: #c2410c;
+    color: var(--agx-warning-text);
 }
 
-/* Custom iOS style Toggles */
-.altgenix-control-table th { font-weight: 600; color: #495057; vertical-align: middle; }
-.altgenix-control-table td { vertical-align: middle; padding: 15px 10px; }
-.altgenix-switch { position: relative; display: inline-block; width: 44px; height: 24px; }
+/* Toggles */
+.altgenix-control-table th { font-weight: 600; color: var(--agx-text); vertical-align: middle; }
+.altgenix-control-table td { vertical-align: middle; padding: 14px 10px; }
+.altgenix-switch { position: relative; display: inline-block; width: 40px; height: 22px; }
 .altgenix-switch input { opacity: 0; width: 0; height: 0; }
-.altgenix-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 24px; }
-.altgenix-slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
-.altgenix-switch input:checked + .altgenix-slider { background-color: #6366f1; }
-.altgenix-switch input:checked + .altgenix-slider:before { transform: translateX(20px); }
-.altgenix-length-col select { border-radius: 6px; padding: 4px 8px; border: 1px solid #ced4da; }
+.altgenix-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: var(--agx-control); transition: background-color .15s ease; border-radius: 22px; }
+.altgenix-slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 3px; bottom: 3px; background-color: #fff; transition: transform .15s ease; border-radius: 50%; }
+.altgenix-switch input:checked + .altgenix-slider { background-color: var(--agx-accent); }
+.altgenix-switch input:checked + .altgenix-slider:before { transform: translateX(18px); }
+.altgenix-switch input:focus-visible + .altgenix-slider { box-shadow: 0 0 0 1px #fff, 0 0 0 3px var(--agx-accent); }
+.altgenix-length-col select { border-radius: 4px; padding: 4px 8px; border: 1px solid var(--agx-control); }
 
-/* Tabs Design */
-.altgenix-tabs { display: flex; border-bottom: 2px solid #e2e8f0; margin-bottom: 20px; gap: 20px; }
-.altgenix-tab-link { background: none; border: none; padding: 12px 20px; font-size: 15px; font-weight: 600; color: #64748b; cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.3s; margin-bottom: -2px; }
-.altgenix-tab-link:hover { color: #3b82f6; }
-.altgenix-tab-link.active { color: #6366f1; border-bottom-color: #6366f1; }
-.altgenix-tab-link:focus-visible { outline: 2px solid #6366f1; outline-offset: -2px; }
-.altgenix-tab-content { display: none; animation: altgenix-fade-in 0.4s ease; }
+/* Tabs, in the style of WordPress's own Site Health screen */
+.altgenix-tabs { display: flex; border-bottom: 1px solid var(--agx-border); margin-bottom: 20px; gap: 0; }
+.altgenix-tab-link { background: none; border: none; padding: 10px 16px; font-size: 14px; font-weight: 600; color: #50575e; cursor: pointer; box-shadow: none; margin-bottom: -1px; }
+.altgenix-tab-link:hover { color: var(--agx-text); }
+.altgenix-tab-link.active { color: var(--agx-text); box-shadow: inset 0 -3px var(--agx-accent); }
+.altgenix-tab-link:focus-visible { outline: 2px solid transparent; box-shadow: inset 0 0 0 2px var(--agx-accent); }
+.altgenix-tab-link.active:focus-visible { box-shadow: inset 0 0 0 2px var(--agx-accent), inset 0 -3px var(--agx-accent); }
+.altgenix-tab-content { display: none; }
 .altgenix-tab-content.active { display: block; }
-@keyframes altgenix-fade-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
 
 /* Progress Bar */
-.altgenix-progress-container { background: #fff; border-radius: 12px; padding: 20px; border: 1px solid #e2e8f0; margin-bottom: 20px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
-.altgenix-progress-bar { width: 100%; height: 12px; background-color: #f1f5f9; border-radius: 20px; overflow: hidden; margin-bottom: 10px; }
-.altgenix-progress-fill { height: 100%; background: linear-gradient(90deg, #6366f1 0%, #8b5cf6 100%); width: 0%; border-radius: 20px; transition: width 0.4s ease-out; position: relative; }
-.altgenix-progress-fill::after { content: ''; position: absolute; top: 0; left: 0; bottom: 0; right: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent); animation: altgenix-shimmer 1.5s infinite; }
-@keyframes altgenix-shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
-.altgenix-progress-text { font-size: 14px; font-weight: 600; color: #475569; text-align: center; }
+.altgenix-progress-container { background: #fff; border-radius: 4px; padding: 16px; border: 1px solid var(--agx-border); margin-bottom: 16px; }
+.altgenix-progress-bar { width: 100%; height: 8px; background-color: var(--agx-border-soft); border-radius: 4px; overflow: hidden; margin-bottom: 10px; }
+.altgenix-progress-fill { height: 100%; background: var(--agx-accent); width: 0%; border-radius: 4px; transition: width .3s ease-out; }
+.altgenix-progress-text { font-size: 13px; font-weight: 600; color: var(--agx-text-2); text-align: center; }
 .altgenix-progress-footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .altgenix-progress-footer .altgenix-progress-text { flex: 1 1 auto; text-align: left; }
-.altgenix-stop-run { flex: 0 0 auto; background: #fff; }
+.altgenix-stop-run { flex: 0 0 auto; }
 @media screen and (max-width: 782px) {
     .altgenix-progress-footer { flex-direction: column; align-items: stretch; gap: 10px; }
     .altgenix-progress-footer .altgenix-progress-text { text-align: center; }
@@ -334,110 +373,80 @@
 }
 
 /* Star Rating */
-.altgenix-star-rating { font-size: 32px; color: #cbd5e1; display: inline-flex; gap: 5px; cursor: pointer; }
-.altgenix-star-rating span { transition: color 0.2s, transform 0.2s; }
-.altgenix-star-rating span:hover { transform: scale(1.1); }
-.altgenix-star-rating span.active, .altgenix-star-rating span.hover { color: #fbbf24; }
+.altgenix-star-rating { font-size: 30px; color: var(--agx-border); display: inline-flex; gap: 6px; cursor: pointer; }
+.altgenix-star-rating span { width: 30px; height: 30px; font-size: 30px; }
+.altgenix-star-rating span.active, .altgenix-star-rating span.hover { color: var(--agx-warning); }
+.altgenix-star-rating span:focus-visible { outline: 2px solid transparent; box-shadow: 0 0 0 2px var(--agx-accent); border-radius: 3px; }
 .dashicons-star-filled:before { content: "\f155"; }
-/* Work-with-the-developer card (plugin screens only) */
-.altgenix-services { border: 1px solid #e0e7ff; }
-.altgenix-services h3 { color: #4f46e5; }
-.altgenix-services-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 20px; margin: 0 0 18px; padding: 0; list-style: none; }
-.altgenix-services-list li { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #495057; }
-.altgenix-services-list .dashicons { color: #6366f1; font-size: 17px; width: 17px; height: 17px; flex: none; }
-.altgenix-services-offer { background: #f5f3ff; border-left: 3px solid #6366f1; border-radius: 6px; padding: 12px 15px; font-size: 13px; color: #495057; line-height: 1.7; }
-.altgenix-services-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
-.altgenix-services-actions a { text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
-.altgenix-services-actions .altgenix-btn-outline { color: #495057; background: #fff; }
-.altgenix-services-actions .altgenix-btn-outline:hover { border-color: #6366f1; color: #4f46e5; }
-.altgenix-services-wa { background: #25d366; }
-.altgenix-services-wa:hover { background: #1da851; }
-.altgenix-services-wa .dashicons { font-size: 17px; width: 17px; height: 17px; }
-.altgenix-services-meta { margin: 14px 0 0; font-size: 12px; }
-.altgenix-services-meta a { color: #4f46e5; text-decoration: none; }
 
+/* Work-with-the-developer card (Help screen only) */
+.altgenix-services h3 { color: var(--agx-text); }
+.altgenix-services-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 20px; margin: 0 0 18px; padding: 0; list-style: none; }
+.altgenix-services-list li { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--agx-text-2); margin: 0; }
+.altgenix-services-list .dashicons { color: var(--agx-muted); font-size: 18px; width: 18px; height: 18px; flex: none; }
+.altgenix-services-offer { background: var(--agx-panel); border-left: 4px solid var(--agx-accent); padding: 10px 14px; font-size: 13px; color: var(--agx-text-2); line-height: 1.6; }
+.altgenix-services-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.altgenix-services-meta { margin: 14px 0 0; font-size: 12px; }
+.altgenix-services-meta a { color: var(--agx-accent); text-decoration: none; }
+.altgenix-services-meta a:hover { text-decoration: underline; }
 
 @media screen and (max-width: 782px) {
     .altgenix-services-list { grid-template-columns: 1fr; }
 }
 
-/* Media Library service notice (media screens only, dismissed for good) */
-.altgenix-service-notice { border-left-color: #6366f1; padding: 4px 0; }
-.altgenix-service-notice-inner { display: flex; gap: 14px; align-items: flex-start; padding: 10px 12px 12px 4px; }
-.altgenix-service-notice-icon { flex: none; width: 38px; height: 38px; border-radius: 9px; background: #eef2ff; color: #6366f1; font-size: 20px; display: flex; align-items: center; justify-content: center; }
-.altgenix-service-notice-body { min-width: 0; }
-.altgenix-service-notice .altgenix-service-notice-title { margin: 2px 0 4px; font-size: 14px; font-weight: 600; color: #1d2327; }
-.altgenix-service-notice .altgenix-service-notice-text { margin: 0 0 10px; color: #50575e; }
-.altgenix-service-notice .altgenix-service-notice-actions { margin: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+/* Media Library service notice (media screens only, dismissed for good). A plain
+   core notice; only the spacing of its parts is set here. */
+.altgenix-service-notice .altgenix-service-notice-title { margin: 8px 0 4px; font-size: 14px; font-weight: 600; color: var(--agx-text); }
+.altgenix-service-notice .altgenix-service-notice-text { margin: 0 0 10px; color: #50575e; max-width: 760px; }
+.altgenix-service-notice .altgenix-service-notice-actions { margin: 0 0 10px; display: flex; flex-wrap: wrap; gap: 8px; }
 
-/* Services banner across the top of the plugin's own screens */
+/* The developer's note across the top of the plugin's own screens. Shaped like a
+   WordPress info notice: it is a note, so it should not shout over the screen it
+   sits on. */
 .altgenix-service-banner {
     position: relative;
     display: flex;
     flex-wrap: wrap;
-    gap: 20px;
+    gap: 10px 24px;
     align-items: center;
-    background: linear-gradient(135deg, #f5f3ff 0%, #eef2ff 50%, #e0e7ff 100%);
-    border: 1px solid #c7d2fe;
-    border-left: 5px solid #6366f1;
-    border-radius: 14px;
-    box-shadow: 0 4px 20px rgba(99, 102, 241, 0.08);
-    padding: 24px 50px 24px 24px;
-    margin-bottom: 30px;
+    background: #fff;
+    border: 1px solid var(--agx-border);
+    border-left: 4px solid #72aee6;
+    box-shadow: 0 1px 1px rgba(0, 0, 0, .04);
+    padding: 12px 44px 12px 16px;
+    margin-bottom: 20px;
 }
-.altgenix-service-banner-icon {
-    flex: none;
-    width: 48px;
-    height: 48px;
-    border-radius: 12px;
-    background: #6366f1;
-    color: #fff;
-    font-size: 24px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
-}
-.altgenix-service-banner-body { flex: 1 1 320px; min-width: 0; }
-.altgenix-service-banner-title { margin: 0 0 6px; font-size: 16px; font-weight: 700; color: #1e1b4b; line-height: 1.4; }
-.altgenix-service-banner-text { margin: 0; font-size: 14px; color: #4338ca; line-height: 1.7; }
-.altgenix-service-banner-text strong { color: #312e81; }
-.altgenix-service-banner-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
-.altgenix-service-banner-actions a { text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
-.altgenix-service-banner-actions .altgenix-btn-outline { color: #495057; background: #fff; }
-.altgenix-service-banner-actions .altgenix-btn-outline:hover { border-color: #6366f1; color: #4f46e5; }
+.altgenix-service-banner-body { flex: 1 1 420px; min-width: 0; }
+.altgenix-service-banner-text { margin: 0; font-size: 13px; color: var(--agx-text-2); line-height: 1.6; max-width: 820px; }
+.altgenix-service-banner-text strong { color: var(--agx-text); }
+.altgenix-service-banner-actions { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; }
+.altgenix-service-banner-actions a { text-decoration: none; }
+.altgenix-service-banner-alt { font-size: 13px; color: var(--agx-accent); }
+.altgenix-service-banner-alt:hover, .altgenix-service-banner-alt:focus { color: var(--agx-accent-dark); text-decoration: underline; }
 
-/* Close / dismiss button */
+/* Close / dismiss button, drawn like core's notice dismiss */
 .altgenix-banner-dismiss {
     position: absolute;
-    top: 12px;
-    right: 12px;
-    background: transparent;
+    top: 0;
+    right: 1px;
+    background: none;
     border: none;
-    color: #a5b4fc;
+    margin: 0;
+    padding: 9px;
+    color: #787c82;
     cursor: pointer;
-    padding: 4px;
-    border-radius: 6px;
-    line-height: 0;
-    transition: all 0.2s ease;
+    line-height: 1;
 }
-.altgenix-banner-dismiss:hover {
-    background: rgba(99, 102, 241, 0.1);
-    color: #4f46e5;
-}
-.altgenix-banner-dismiss svg {
-    width: 18px;
-    height: 18px;
-}
+.altgenix-banner-dismiss .dashicons { width: 20px; height: 20px; font-size: 16px; line-height: 20px; }
+.altgenix-banner-dismiss:hover, .altgenix-banner-dismiss:focus { color: var(--agx-error); }
+.altgenix-banner-dismiss:focus-visible { outline: 2px solid transparent; box-shadow: 0 0 0 2px var(--agx-accent); border-radius: 50%; }
 
-/* Primary call to action, given enough weight to be the obvious next click */
-.altgenix-btn-lg { padding: 12px 22px; font-size: 15px; font-weight: 600; box-shadow: 0 2px 8px rgba(37, 211, 102, 0.25); }
-.altgenix-service-banner-alt { font-size: 13px; color: #6366f1; text-decoration: none; font-weight: 500; }
-.altgenix-service-banner-alt:hover { color: #4f46e5; text-decoration: underline; }
+/* A slightly larger button for the one action a card exists for. */
+.altgenix-btn-lg { min-height: 36px; padding: 0 16px; font-size: 14px; }
 
 /* These button classes started life on <button> and are now used on <a> too.
    WordPress admin colours every admin link on hover, focus and visit, which
-   repainted the label blue mid-hover, so each state is pinned explicitly here. */
+   repainted the label mid-hover, so each state is pinned explicitly here. */
 a.altgenix-btn-primary,
 a.altgenix-btn-primary:link,
 a.altgenix-btn-primary:visited,
@@ -447,20 +456,20 @@ a.altgenix-btn-primary:active { color: #fff; text-decoration: none; }
 
 a.altgenix-btn-outline,
 a.altgenix-btn-outline:link,
-a.altgenix-btn-outline:visited { color: #495057; text-decoration: none; }
+a.altgenix-btn-outline:visited { color: #2c3338; text-decoration: none; }
 a.altgenix-btn-outline:hover,
 a.altgenix-btn-outline:focus,
-a.altgenix-btn-outline:active { color: #4f46e5; text-decoration: none; }
+a.altgenix-btn-outline:active { color: var(--agx-accent); text-decoration: none; }
 
 a.altgenix-btn-secondary,
 a.altgenix-btn-secondary:link,
-a.altgenix-btn-secondary:visited,
+a.altgenix-btn-secondary:visited { color: var(--agx-accent); text-decoration: none; }
 a.altgenix-btn-secondary:hover,
 a.altgenix-btn-secondary:focus,
-a.altgenix-btn-secondary:active { color: #4f46e5; text-decoration: none; }
+a.altgenix-btn-secondary:active { color: var(--agx-accent-dark); text-decoration: none; }
 
 /* Save bar state */
-.altgenix-save-state { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: #d97706; font-weight: 500; }
+.altgenix-save-state { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--agx-warning-text); font-weight: 500; }
 .altgenix-save-state .dashicons { font-size: 16px; width: 16px; height: 16px; }
 .altgenix-form-actions[hidden], .altgenix-save-state[hidden] { display: none !important; }
 
@@ -468,15 +477,22 @@ a.altgenix-btn-secondary:active { color: #4f46e5; text-decoration: none; }
     .altgenix-save-state { font-size: 12px; }
 }
 
+/* Inline notes inside a card, shaped like WordPress inline notices. */
+.altgenix-inline-note { max-width: 600px; margin-top: 10px; padding: 8px 12px; background: #fff; border: 1px solid var(--agx-border-soft); border-left: 4px solid #72aee6; }
+.altgenix-inline-note.is-warning { border-left-color: var(--agx-warning); background: var(--agx-warning-bg); }
+.altgenix-inline-note p { margin: 0; font-size: 13px; line-height: 1.6; color: var(--agx-text-2); }
+
 /* Form layout: every control the same width, and explanations kept to a readable
    measure instead of running the full width of a wide screen. */
-.altgenix-card > h3 { margin: 0 0 6px; font-size: 16px; font-weight: 600; color: #1d2327; }
-.altgenix-card > h3 + .description { margin: 0 0 22px; }
+.altgenix-card > h3 { margin: 0 0 6px; font-size: 15px; font-weight: 600; color: var(--agx-text); }
+.altgenix-card > h3 + .description { margin: 0 0 20px; }
+/* Only where rows stack in normal flow; the settings grid has its own gap. */
+.altgenix-card:not(.altgenix-form-grid) > h3 + .altgenix-form-row { margin-top: 16px; }
 
 .altgenix-form-row .altgenix-custom-select,
 .altgenix-form-row .altgenix-input-wrapper { max-width: 400px; }
-.altgenix-form-row .description { max-width: 680px; margin: 10px 0 0; font-size: 13px; line-height: 1.7; color: #6c757d; }
-.altgenix-form-row .description strong { color: #495057; }
+.altgenix-form-row .description { max-width: 680px; margin: 8px 0 0; font-size: 13px; line-height: 1.6; color: var(--agx-muted); }
+.altgenix-form-row .description strong { color: var(--agx-text-2); }
 .altgenix-form-row > label:not(.altgenix-switch) + .description { margin-top: -2px; margin-bottom: 10px; }
 
 /* The toggle needs room of its own, not a label's bottom margin. */
@@ -484,8 +500,8 @@ a.altgenix-btn-secondary:active { color: #4f46e5; text-decoration: none; }
 
 /* Narrow contexts keep narrow controls. */
 .altgenix-length-col .altgenix-custom-select { max-width: 200px; }
-.altgenix-table-filters .altgenix-custom-select { max-width: 190px; }
-.altgenix-table-filters .altgenix-per-page + .altgenix-custom-select { max-width: 150px; margin-left: 10px; }
+.altgenix-table-filters .altgenix-custom-select { width: auto; min-width: 140px; max-width: 190px; }
+.altgenix-table-filters .altgenix-per-page + .altgenix-custom-select { min-width: 120px; max-width: 150px; }
 
 /* DELIBERATELY ONE COLUMN. The pairing described below was tried and rolled back by
    hand — do not "restore" it. Kept for the record: provider belongs with its key,
@@ -493,7 +509,7 @@ a.altgenix-btn-secondary:active { color: #4f46e5; text-decoration: none; }
    The grid lives on the CARD, never on the rows themselves — jQuery writes an
    inline display onto the rows when the mode toggle slides them, and a grid item
    keeps taking part in the grid whatever its own display says. */
-.altgenix-form-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px 0; align-items: start; }
+.altgenix-form-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 22px 0; align-items: start; }
 .altgenix-form-grid > h3,
 .altgenix-form-grid > .altgenix-form-row-wide { grid-column: 1 / -1; }
 
@@ -518,12 +534,12 @@ a.altgenix-btn-secondary:active { color: #4f46e5; text-decoration: none; }
     align-items: center;
     justify-content: center;
     margin-left: 6px;
-    color: #94a3b8;
+    color: var(--agx-control);
     cursor: help;
     vertical-align: middle;
 }
 .altgenix-tip:hover {
-    color: #6366f1;
+    color: var(--agx-accent);
 }
 .altgenix-tip svg {
     display: block;
@@ -532,24 +548,23 @@ a.altgenix-btn-secondary:active { color: #4f46e5; text-decoration: none; }
     position: absolute;
     bottom: calc(100% + 8px);
     left: 0;
-    transform: translateY(4px);
-    background: #1e293b;
-    color: #f8fafc;
-    padding: 8px 12px;
-    border-radius: 6px;
-    font-size: 13px;
+    background: var(--agx-text);
+    color: #f0f0f1;
+    padding: 8px 10px;
+    border-radius: 3px;
+    font-size: 12px;
     font-weight: 400;
     white-space: normal;
     width: max-content;
     max-width: 280px;
     opacity: 0;
     visibility: hidden;
-    transition: opacity 0.2s, transform 0.2s;
+    transition: opacity .1s ease;
     z-index: 1000;
     pointer-events: none;
     line-height: 1.5;
     text-transform: none;
-    box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, .2);
     text-align: left;
 }
 /* Invisible bridge so mouse doesn't fall off when moving to tooltip */
@@ -561,48 +576,32 @@ a.altgenix-btn-secondary:active { color: #4f46e5; text-decoration: none; }
     width: 100%;
     height: 12px;
 }
-/* Ensure tooltip content fits on small screens by shifting left if needed */
-@media screen and (max-width: 782px) {
-    .altgenix-tip .altgenix-tip-content {
-        left: 0;
-        transform: translateX(0) translateY(4px);
-    }
-    .altgenix-tip:hover .altgenix-tip-content {
-        transform: translateX(0) translateY(0);
-    }
-    .altgenix-tip .altgenix-tip-content::before {
-        left: 12px;
-    }
-}
 .altgenix-tip .altgenix-tip-content::before {
     content: '';
     position: absolute;
     top: 100%;
     left: 12px;
-    transform: none;
     border-width: 5px;
     border-style: solid;
-    border-color: #1e293b transparent transparent transparent;
+    border-color: var(--agx-text) transparent transparent transparent;
 }
 .altgenix-tip:hover .altgenix-tip-content,
 .altgenix-tip:focus .altgenix-tip-content,
 .altgenix-tip:focus-within .altgenix-tip-content {
     opacity: 1;
     visibility: visible;
-    transform: translateY(0);
     pointer-events: auto;
 }
 /* Hover is not available to a keyboard, and it is not available on a tablet
    either — which is where half of wp-admin gets used. */
 .altgenix-tip:focus,
-.altgenix-tip:focus-visible { color: #6366f1; outline: 2px solid rgba(99, 102, 241, 0.45); outline-offset: 2px; border-radius: 50%; }
+.altgenix-tip:focus-visible { color: var(--agx-accent); outline: 2px solid transparent; box-shadow: 0 0 0 2px var(--agx-accent); border-radius: 50%; }
 .altgenix-tip .altgenix-tip-content a {
-    color: #818cf8;
+    color: #72aee6;
     text-decoration: underline;
-    font-weight: 500;
 }
 .altgenix-tip .altgenix-tip-content a:hover {
-    color: #a5b4fc;
+    color: #9ec2e6;
 }
 
 /* --- Toast Notifications --- */
@@ -613,37 +612,36 @@ a.altgenix-btn-secondary:active { color: #4f46e5; text-decoration: none; }
     z-index: 999999;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 8px;
 }
 
 .altgenix-toast {
     min-width: 250px;
-    max-width: 350px;
-    padding: 14px 20px;
-    background: #1f2937;
-    color: #fff;
-    border-radius: 8px;
-    font-size: 14px;
-    font-weight: 500;
-    line-height: 1.4;
-    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-    transform: translateX(120%);
+    max-width: 360px;
+    padding: 12px 14px;
+    background: var(--agx-text);
+    color: #f0f0f1;
+    border-radius: 4px;
+    font-size: 13px;
+    line-height: 1.5;
+    box-shadow: 0 3px 10px rgba(0, 0, 0, .2);
+    transform: translateY(8px);
     opacity: 0;
-    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.3s ease;
-    border-left: 5px solid #6366f1;
+    transition: transform .15s ease-out, opacity .15s ease-out;
+    border-left: 4px solid #72aee6;
 }
 
 .altgenix-toast.show {
-    transform: translateX(0);
+    transform: translateY(0);
     opacity: 1;
 }
 
 .altgenix-toast-success {
-    border-left-color: #10b981; /* Emerald green */
+    border-left-color: var(--agx-success);
 }
 
 .altgenix-toast-error {
-    border-left-color: #ef4444; /* Red */
+    border-left-color: var(--agx-error);
 }
 
 .altgenix-toast {
@@ -676,14 +674,14 @@ a.altgenix-btn-secondary:active { color: #4f46e5; text-decoration: none; }
 .altgenix-toast-body { flex: 1 1 auto; display: flex; flex-direction: column; gap: 6px; }
 
 .altgenix-toast-link {
-    color: #c7d2fe;
+    color: #72aee6;
     text-decoration: underline;
     font-weight: 600;
     align-self: flex-start;
 }
 
 .altgenix-toast-link:hover,
-.altgenix-toast-link:focus { color: #e0e7ff; }
+.altgenix-toast-link:focus { color: #9ec2e6; }
 
 /* Automatic processing used to run in complete silence. Bottom-left so it never
    collides with the toasts or the settings save bar. */
@@ -692,24 +690,21 @@ a.altgenix-btn-secondary:active { color: #4f46e5; text-decoration: none; }
     bottom: 30px;
     left: 200px;
     z-index: 999998;
-    background: #1f2937;
-    color: #fff;
-    border-left: 5px solid #6366f1;
-    border-radius: 8px;
-    padding: 10px 16px;
+    background: var(--agx-text);
+    color: #f0f0f1;
+    border-left: 4px solid #72aee6;
+    border-radius: 4px;
+    padding: 10px 14px;
     font-size: 13px;
-    font-weight: 500;
-    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    box-shadow: 0 3px 10px rgba(0, 0, 0, .2);
 }
 
 @media screen and (max-width: 960px) {
     .altgenix-auto-status { left: 20px; right: 20px; }
 }
 
-
-
-/* Media modal primary action: keep the icon readable on the indigo button without
-   changing the purple icon-only regenerate action used in the bulk table. */
+/* Media modal primary action: keep the icon readable on the primary button without
+   changing the coloured icon-only regenerate action used in the bulk table. */
 .button.button-primary.altgenix-regenerate-btn .dashicons,
 .button.button-primary.altgenix-regenerate-btn:hover .dashicons,
 .button.button-primary.altgenix-regenerate-btn:focus .dashicons {
@@ -717,22 +712,22 @@ a.altgenix-btn-secondary:active { color: #4f46e5; text-decoration: none; }
 }
 
 /* Optional destructive cleanup shown only for manual Rename. */
-.altgenix-modal-extra { margin: -8px 0 24px; }
+.altgenix-modal-extra { margin: -8px 0 22px; }
 .altgenix-delete-old-option {
     display: flex;
     align-items: flex-start;
     gap: 10px;
-    padding: 12px 14px;
-    border: 1px solid #e5e7eb;
-    border-radius: 8px;
-    background: #f8fafc;
+    padding: 10px 12px;
+    border: 1px solid var(--agx-border-soft);
+    border-radius: 4px;
+    background: var(--agx-panel);
     cursor: pointer;
 }
 .altgenix-modal-extra .altgenix-delete-old-option + .altgenix-delete-old-option { margin-top: 10px; }
 .altgenix-delete-old-option input { margin: 3px 0 0; flex: none; }
-.altgenix-delete-old-option span { display: flex; flex-direction: column; gap: 4px; color: #374151; }
-.altgenix-delete-old-option strong { font-size: 13px; font-weight: 600; color: #1f2937; }
-.altgenix-delete-old-option small { font-size: 12px; line-height: 1.45; color: #6b7280; }
+.altgenix-delete-old-option span { display: flex; flex-direction: column; gap: 4px; color: var(--agx-text-2); }
+.altgenix-delete-old-option strong { font-size: 13px; font-weight: 600; color: var(--agx-text); }
+.altgenix-delete-old-option small { font-size: 12px; line-height: 1.45; color: var(--agx-muted); }
 
 /* Settings actions: verification and key removal are actions, not preferences. */
 .altgenix-key-meta {
@@ -742,23 +737,23 @@ a.altgenix-btn-secondary:active { color: #4f46e5; text-decoration: none; }
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    margin-top: 8px;
+    margin-top: 6px;
 }
 .altgenix-key-meta .altgenix-api-key-status { margin: 0; }
 .altgenix-link-danger {
     appearance: none;
     border: 0;
     background: transparent;
-    color: #dc2626;
+    color: var(--agx-error-text);
     padding: 4px 0;
-    font-size: 12px;
-    font-weight: 600;
+    font-size: 13px;
     cursor: pointer;
-    text-decoration: none;
+    text-decoration: underline;
     white-space: nowrap;
 }
 .altgenix-link-danger:hover,
-.altgenix-link-danger:focus { color: #b91c1c; text-decoration: underline; outline: none; }
+.altgenix-link-danger:focus { color: #8a2424; outline: none; }
+.altgenix-link-danger:focus-visible { box-shadow: 0 0 0 2px var(--agx-accent); border-radius: 2px; }
 .altgenix-link-danger:disabled { opacity: .55; cursor: wait; text-decoration: none; }
 
 .altgenix-model-control {
@@ -766,79 +761,61 @@ a.altgenix-btn-secondary:active { color: #4f46e5; text-decoration: none; }
     max-width: 680px;
     display: grid;
     grid-template-columns: minmax(0, 400px) auto;
-    gap: 10px;
+    gap: 8px;
     align-items: start;
 }
 .altgenix-model-control .altgenix-custom-select { max-width: 400px !important; }
 .altgenix-verify-models-btn {
-    min-height: 44px;
+    min-height: 36px;
     justify-content: center;
     white-space: nowrap;
     box-sizing: border-box;
 }
-.altgenix-verify-models-btn:hover:not(:disabled),
-.altgenix-verify-models-btn:focus:not(:disabled) { background: #c7d2fe; color: #4338ca; }
 .altgenix-verify-models-btn:disabled { opacity: .55; cursor: not-allowed; }
 .altgenix-model-status {
     max-width: 680px;
     margin: 8px 0 0;
-    font-size: 12px;
-    line-height: 1.45;
-    font-weight: 600;
+    font-size: 13px;
+    line-height: 1.5;
 }
-.altgenix-model-status.is-success { color: #059669; }
-.altgenix-model-status.is-neutral { color: #64748b; font-weight: 500; }
-.altgenix-model-status.is-error { color: #dc2626; }
+.altgenix-model-status.is-success { color: var(--agx-success-text); }
+.altgenix-model-status.is-neutral { color: var(--agx-muted); }
+.altgenix-model-status.is-error { color: var(--agx-error-text); }
 
-.altgenix-btn-danger {
-    background: #dc2626;
-    color: #fff;
-    border: none;
-    padding: 10px 24px;
-    border-radius: 8px;
-    font-size: 15px;
-    cursor: pointer;
-    font-weight: 500;
-    transition: .2s ease;
-}
+.altgenix-btn-danger { background: var(--agx-error); border-color: var(--agx-error); color: #fff; }
 .altgenix-btn-danger:hover,
-.altgenix-btn-danger:focus { background: #b91c1c; color: #fff; }
+.altgenix-btn-danger:focus { background: var(--agx-error-text); border-color: var(--agx-error-text); color: #fff; }
 
 @media screen and (max-width: 782px) {
     .altgenix-model-control { grid-template-columns: minmax(0, 1fr); }
     .altgenix-verify-models-btn { width: 100%; }
     .altgenix-key-meta { align-items: flex-start; }
+    .altgenix-select-btn { height: 40px; }
 }
 .altgenix-select-btn:disabled {
-    background: #f8fafc;
-    color: #94a3b8;
-    border-color: #e2e8f0;
+    background: var(--agx-panel);
+    color: #a7aaad;
+    border-color: var(--agx-border-soft);
     cursor: not-allowed;
     box-shadow: none;
 }
-.altgenix-select-btn:disabled svg { color: #cbd5e1; }
+.altgenix-select-btn:disabled svg { color: #c3c4c7; }
 
 
 /* Bulk selection actions */
-.altgenix-bulk-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
-.altgenix-bulk-actions .altgenix-btn-primary,
-.altgenix-bulk-actions .altgenix-btn-secondary,
-.altgenix-bulk-actions .altgenix-btn-outline { display: inline-flex; align-items: center; gap: 6px; }
-.altgenix-bulk-actions .altgenix-btn-primary[disabled],
-.altgenix-bulk-actions .altgenix-btn-outline[disabled],
-.altgenix-bulk-actions .altgenix-btn-secondary[disabled] { opacity: .55; cursor: not-allowed; transform: none; }
-.altgenix-bulk-actions-help { flex-basis: 100%; font-size: 12px; color: #6b7280; margin-top: 2px; }
+.altgenix-bulk-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.altgenix-bulk-actions-help { flex-basis: 100%; font-size: 12px; color: var(--agx-muted); margin-top: 2px; }
 .altgenix-col-select { width: 42px; text-align: center; }
 .altgenix-col-select input[type=checkbox] { margin: 0; }
 
 /* Regenerate field selector */
 .altgenix-field-options { margin-bottom: 12px; }
-.altgenix-field-options-title { font-size: 13px; font-weight: 600; color: #374151; margin: 0 0 10px; }
-.altgenix-field-options-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-.altgenix-field-option { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid #e5e7eb; border-radius: 8px; background: #f8fafc; cursor: pointer; min-height: 42px; box-sizing: border-box; }
+.altgenix-field-options-title { font-size: 13px; font-weight: 600; color: var(--agx-text); margin: 0 0 8px; }
+.altgenix-field-options-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.altgenix-field-option { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--agx-border-soft); border-radius: 4px; background: #fff; cursor: pointer; min-height: 38px; box-sizing: border-box; }
 .altgenix-field-option input { margin: 0; }
-.altgenix-field-option span { font-size: 13px; font-weight: 600; color: #1f2937; }
-.altgenix-field-option:hover { border-color: #c7d2fe; background: #eef2ff; }
+.altgenix-field-option span { font-size: 13px; color: var(--agx-text); }
+.altgenix-field-option:hover { border-color: var(--agx-accent); background: var(--agx-accent-soft); }
 .altgenix-field-option.is-disabled { opacity: .55; cursor: not-allowed; }
 
 @media screen and (max-width: 980px) {
@@ -846,7 +823,7 @@ a.altgenix-btn-secondary:active { color: #4f46e5; text-decoration: none; }
     .altgenix-bulk-actions { justify-content: flex-start; }
 }
 @media screen and (max-width: 782px) {
-    .altgenix-table th, .altgenix-table td { padding: 12px 10px; }
+    .altgenix-table th, .altgenix-table td { padding: 10px 8px; }
     .altgenix-field-options-grid { grid-template-columns: minmax(0, 1fr); }
     .altgenix-bulk-actions .altgenix-btn-primary,
     .altgenix-bulk-actions .altgenix-btn-secondary,
@@ -854,41 +831,47 @@ a.altgenix-btn-secondary:active { color: #4f46e5; text-decoration: none; }
 }
 
 
-/* Bulk optimizer alignment polish */
+/* Bulk optimizer layout: the filters take the first line and the actions sit
+   under them on the right. Six controls and three buttons do not fit one line
+   at common widths, and a toolbar that wraps unpredictably is worse than two
+   deliberate rows. */
 .altgenix-table-toolbar {
+    flex-wrap: wrap;
     align-items: flex-start;
-    gap: 24px;
+    gap: 14px 24px;
 }
 .altgenix-table-filters {
-    flex: 0 0 auto;
-    min-height: 38px;
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    gap: 8px;
+    min-height: 36px;
 }
+.altgenix-search-form { display: inline-flex; align-items: center; gap: 6px; margin: 0; }
+input.altgenix-search-input { width: 230px; height: 36px; min-height: 0; margin: 0; padding: 0 10px; line-height: normal; border: 1px solid var(--agx-control); border-radius: 4px; font-size: 14px; box-sizing: border-box; }
+input.altgenix-search-input:focus { border-color: var(--agx-accent); box-shadow: 0 0 0 1px var(--agx-accent); outline: 2px solid transparent; }
+.altgenix-search-btn { min-height: 36px; }
+.altgenix-filter-summary { margin: -4px 0 14px; font-size: 13px; color: #50575e; }
+.altgenix-filter-summary a { margin-left: 6px; }
 .altgenix-bulk-actions {
     margin-left: auto;
     display: flex;
     flex-direction: column;
     align-items: flex-end;
     justify-content: flex-start;
-    gap: 7px;
+    gap: 6px;
     min-width: 0;
 }
 .altgenix-bulk-actions-buttons {
     display: flex;
     align-items: center;
     justify-content: flex-end;
-    gap: 10px;
+    gap: 8px;
     flex-wrap: wrap;
 }
 .altgenix-bulk-actions-buttons .altgenix-btn-primary,
 .altgenix-bulk-actions-buttons .altgenix-btn-secondary,
 .altgenix-bulk-actions-buttons .altgenix-btn-outline {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    min-height: 38px;
-    box-sizing: border-box;
-    white-space: nowrap;
+    min-height: 34px;
 }
 .altgenix-bulk-actions-help {
     flex-basis: auto;
@@ -932,6 +915,11 @@ a.altgenix-btn-secondary:active { color: #4f46e5; text-decoration: none; }
     }
 }
 @media screen and (max-width: 782px) {
+    .altgenix-table-filters .altgenix-custom-select,
+    .altgenix-table-filters .altgenix-per-page + .altgenix-custom-select { flex: 1 1 140px; max-width: none; }
+    .altgenix-search-form { flex: 1 1 100%; }
+    input.altgenix-search-input { flex: 1 1 auto; width: auto; height: 40px; }
+    .altgenix-search-btn { min-height: 40px; }
     .altgenix-bulk-actions-buttons {
         width: 100%;
         flex-direction: column;

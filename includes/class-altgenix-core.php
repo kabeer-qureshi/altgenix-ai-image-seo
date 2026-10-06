@@ -71,6 +71,7 @@ class ALTGENIX_Core {
         add_filter( 'wp_calculate_image_srcset_meta', array( 'ALTGENIX_Files', 'filter_srcset_meta' ), 10, 4 );
         add_filter( 'wp_image_src_get_dimensions', array( 'ALTGENIX_Files', 'filter_src_dimensions' ), 10, 4 );
         add_action( 'delete_attachment', array( 'ALTGENIX_Files', 'delete_retained_files' ), 10, 1 );
+        add_filter( 'posts_clauses', array( __CLASS__, 'filter_search_clauses' ), 10, 2 );
         foreach ( array( 'get_pending', 'process_image', 'mark_selected_processed', 'get_auto_queue', 'process_auto', 'rename_existing', 'remaining_count' ) as $action ) {
             add_action( 'wp_ajax_altgenix_' . $action, array( $this, 'ajax_' . $action ) );
         }
@@ -205,9 +206,108 @@ class ALTGENIX_Core {
                 'code'            => $result->get_error_code(),
                 // The attempt failed but the image keeps its earlier, good results.
                 'still_processed' => is_array( $data ) && ! empty( $data['still_processed'] ),
+                // The next image would fail the same way: stop the run and say why.
+                'stop_run'        => is_array( $data ) && ! empty( $data['stop_run'] ),
             ) );
         }
         wp_send_json_success( $result );
+    }
+
+    /**
+     * Failures that belong to the key, the account or the chosen model rather than
+     * to one image. A 30,000-image run that meets one of these should stop at the
+     * first image, not mark every remaining image Failed with the same sentence.
+     */
+    private const STOP_RUN_CODES = array( 'altgenix_auth', 'altgenix_credits', 'altgenix_no_quota', 'altgenix_model_unavailable', 'altgenix_model_missing', 'altgenix_configuration' );
+
+    /** The Bulk Optimizer filters when nothing is filtered. */
+    public static function default_queue_filters() {
+        return array( 'status' => 'all', 'month' => '', 'alt' => 'any', 'search' => '' );
+    }
+
+    /**
+     * Read the Bulk Optimizer filters from a request ($_GET on the page, $_POST from
+     * the run), keeping only values the queries below understand.
+     *
+     * @param array $source Unslashed request values.
+     */
+    public static function queue_filters( $source ) {
+        $filters = self::default_queue_filters();
+        if ( ! is_array( $source ) ) { return $filters; }
+        $value = function ( $key ) use ( $source ) { return isset( $source[ $key ] ) && is_string( $source[ $key ] ) ? $source[ $key ] : ''; };
+        if ( in_array( $value( 'altgenix_status' ), array( 'pending', 'processed', 'failed' ), true ) ) { $filters['status'] = $value( 'altgenix_status' ); }
+        // Upload month as YYYYMM, the same form WP_Query's "m" takes.
+        if ( preg_match( '/^\d{4}(?:0[1-9]|1[0-2])$/', $value( 'altgenix_month' ) ) ) { $filters['month'] = $value( 'altgenix_month' ); }
+        if ( in_array( $value( 'altgenix_alt' ), array( 'missing', 'present' ), true ) ) { $filters['alt'] = $value( 'altgenix_alt' ); }
+        $search = trim( sanitize_text_field( $value( 'altgenix_search' ) ) );
+        if ( $search !== '' ) { $filters['search'] = function_exists( 'mb_substr' ) ? mb_substr( $search, 0, 100 ) : substr( $search, 0, 100 ); }
+        return $filters;
+    }
+
+    /** Whether anything narrows the view beyond "every image". */
+    public static function queue_filters_active( $filters ) {
+        return $filters !== self::default_queue_filters();
+    }
+
+    /**
+     * WP_Query arguments for the images the filters select.
+     *
+     * The table and the run share this, so "Process" works through exactly the
+     * images the table is showing, minus the ones already processed: a run never
+     * touches a processed image, whatever the filters say.
+     *
+     * @param array $filters From queue_filters().
+     * @param bool  $runnable Only images a run would process (pending or failed).
+     */
+    public static function queue_query_args( $filters, $runnable = false ) {
+        $args = array( 'post_type' => 'attachment', 'post_status' => 'inherit', 'post_mime_type' => self::queue_mime_types() );
+        $meta = array( 'relation' => 'AND' );
+        if ( $filters['status'] === 'processed' ) {
+            $meta[] = array( 'key' => '_altgenix_processed', 'value' => '1', 'compare' => '=' );
+            $meta[] = array( 'key' => '_altgenix_error', 'compare' => 'NOT EXISTS' );
+        } elseif ( $filters['status'] === 'pending' ) {
+            $meta[] = array( 'key' => '_altgenix_processed', 'compare' => 'NOT EXISTS' );
+            $meta[] = array( 'key' => '_altgenix_error', 'compare' => 'NOT EXISTS' );
+        } elseif ( $filters['status'] === 'failed' ) {
+            $meta[] = array( 'key' => '_altgenix_error', 'compare' => 'EXISTS' );
+        }
+        if ( $runnable ) { $meta[] = array( 'key' => '_altgenix_processed', 'compare' => 'NOT EXISTS' ); }
+        if ( $filters['alt'] === 'missing' ) {
+            $meta[] = array(
+                'relation' => 'OR',
+                array( 'key' => '_wp_attachment_image_alt', 'compare' => 'NOT EXISTS' ),
+                array( 'key' => '_wp_attachment_image_alt', 'value' => '', 'compare' => '=' ),
+            );
+        } elseif ( $filters['alt'] === 'present' ) {
+            $meta[] = array( 'key' => '_wp_attachment_image_alt', 'value' => '', 'compare' => '!=' );
+        }
+        if ( count( $meta ) > 1 ) { $args['meta_query'] = $meta; }
+        if ( $filters['month'] !== '' ) { $args['m'] = $filters['month']; }
+        if ( $filters['search'] !== '' ) { $args['altgenix_search'] = $filters['search']; }
+        return $args;
+    }
+
+    /**
+     * Search by file name, title or alt text, for queries that carry
+     * "altgenix_search". WordPress's own search reads neither the file name nor the
+     * alt text, and the file name is what people remember.
+     */
+    public static function filter_search_clauses( $clauses, $query ) {
+        $term = $query->get( 'altgenix_search' );
+        if ( ! is_string( $term ) || $term === '' ) { return $clauses; }
+        global $wpdb;
+        $like = '%' . $wpdb->esc_like( $term ) . '%';
+        // "red car" should find red-car.jpg.
+        $file_like = '%' . $wpdb->esc_like( str_replace( ' ', '-', $term ) ) . '%';
+        $clauses['join'] .= " LEFT JOIN {$wpdb->postmeta} AS altgenix_file ON ( altgenix_file.post_id = {$wpdb->posts}.ID AND altgenix_file.meta_key = '_wp_attached_file' )";
+        $clauses['join'] .= " LEFT JOIN {$wpdb->postmeta} AS altgenix_alt ON ( altgenix_alt.post_id = {$wpdb->posts}.ID AND altgenix_alt.meta_key = '_wp_attachment_image_alt' )";
+        $clauses['where'] .= $wpdb->prepare(
+            " AND ( {$wpdb->posts}.post_title LIKE %s OR altgenix_file.meta_value LIKE %s OR altgenix_file.meta_value LIKE %s OR altgenix_alt.meta_value LIKE %s )",
+            $like, $like, $file_like, $like
+        );
+        // A duplicated meta row must not list an image twice.
+        if ( empty( $clauses['groupby'] ) ) { $clauses['groupby'] = "{$wpdb->posts}.ID"; }
+        return $clauses;
     }
 
     public function ajax_get_auto_queue() {
@@ -246,6 +346,8 @@ class ALTGENIX_Core {
         }
         // phpcs:ignore WordPress.Security.NonceVerification.Missing -- authorize() above verifies the shared nonce.
         $after = isset( $_POST['after_id'] ) && is_scalar( $_POST['after_id'] ) ? absint( $_POST['after_id'] ) : 0;
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing -- authorize() above verifies the shared nonce; queue_filters() whitelists every value.
+        $filters = self::queue_filters( wp_unslash( $_POST ) );
         // An ID cursor is stable even when rows succeed, fail or disappear mid-run.
         global $wpdb;
         $where = function ( $sql, $query ) use ( $after, $wpdb ) {
@@ -254,31 +356,30 @@ class ALTGENIX_Core {
         };
         add_filter( 'posts_where', $where, 10, 2 );
         try {
-            $query = new WP_Query( array(
+            $query = new WP_Query( array_merge( self::queue_query_args( $filters, true ), array(
                 'altgenix_cursor_query' => true,
-                'post_type' => 'attachment', 'post_status' => 'inherit', 'post_mime_type' => 'image',
                 'posts_per_page' => 100, 'fields' => 'ids', 'orderby' => 'ID', 'order' => 'ASC',
-                'meta_query' => array( array( 'key' => '_altgenix_processed', 'compare' => 'NOT EXISTS' ) ),
-            ) );
+            ) ) );
         } finally { remove_filter( 'posts_where', $where, 10 ); }
         $ids = array_map( 'intval', $query->posts );
         wp_send_json_success( array( 'ids' => $ids, 'remaining' => (int) $query->found_posts, 'next_cursor' => $ids ? max( $ids ) : $after ) );
     }
 
-    /** Images a bulk run would work through: never processed, or failed. */
-    public static function remaining_count() {
-        $query = new WP_Query( array(
-            'post_type' => 'attachment', 'post_status' => 'inherit', 'post_mime_type' => self::queue_mime_types(),
-            'posts_per_page' => 1, 'fields' => 'ids',
-            'meta_query' => array( array( 'key' => '_altgenix_processed', 'compare' => 'NOT EXISTS' ) ),
-        ) );
+    /**
+     * Images a bulk run would work through: never processed, or failed, and within
+     * the filters when there are any.
+     */
+    public static function remaining_count( $filters = null ) {
+        $filters = is_array( $filters ) ? $filters : self::default_queue_filters();
+        $query = new WP_Query( array_merge( self::queue_query_args( $filters, true ), array( 'posts_per_page' => 1, 'fields' => 'ids' ) ) );
         return (int) $query->found_posts;
     }
 
     /** One query after a run finishes, so the count on the button stays true. */
     public function ajax_remaining_count() {
         $this->authorize( 'manage_options' );
-        wp_send_json_success( array( 'remaining' => self::remaining_count() ) );
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing -- authorize() above verifies the shared nonce; queue_filters() whitelists every value.
+        wp_send_json_success( array( 'remaining' => self::remaining_count( self::queue_filters( wp_unslash( $_POST ) ) ) ) );
     }
 
     public function ajax_process_image() {
@@ -309,12 +410,17 @@ class ALTGENIX_Core {
         }
         $count   = 0;
         $skipped = 0;
+        // Three different reasons used to share one counter, so the toast read
+        // "0 images marked as done. 1 skipped (already done or still uploading)" even
+        // when the real reason was a run working on that image at that moment.
+        $reasons = array( 'done' => 0, 'uploading' => 0, 'busy' => 0 );
         $updated = array();
         $alts    = array();
         foreach ( $ids as $id ) {
             $token = ALTGENIX_Lock::acquire( $id );
             if ( ! $token ) {
                 $skipped++;
+                $reasons['busy']++;
                 continue;
             }
             $save_error = false;
@@ -322,8 +428,14 @@ class ALTGENIX_Core {
                 // Failed images are accepted on purpose. An image the provider will
                 // never describe (refused, unreadable) otherwise sits in every
                 // "process all" run forever, billed each time, with no way out.
-                if ( get_post_meta( $id, '_altgenix_auto', true ) || ( get_post_meta( $id, '_altgenix_processed', true ) && ! metadata_exists( 'post', $id, '_altgenix_error' ) ) ) {
+                if ( get_post_meta( $id, '_altgenix_auto', true ) ) {
                     $skipped++;
+                    $reasons['uploading']++;
+                    continue;
+                }
+                if ( get_post_meta( $id, '_altgenix_processed', true ) && ! metadata_exists( 'post', $id, '_altgenix_error' ) ) {
+                    $skipped++;
+                    $reasons['done']++;
                     continue;
                 }
                 if ( ! update_post_meta( $id, '_altgenix_processed', '1' ) && get_post_meta( $id, '_altgenix_processed', true ) !== '1' ) {
@@ -341,7 +453,7 @@ class ALTGENIX_Core {
                 wp_send_json_error( array( 'message' => 'Could not save processed status. Please retry.' ) );
             }
         }
-        wp_send_json_success( array( 'count' => $count, 'skipped' => $skipped, 'updated_ids' => array_map( 'intval', $updated ), 'updated_alts' => (object) $alts ) );
+        wp_send_json_success( array( 'count' => $count, 'skipped' => $skipped, 'skipped_reasons' => $reasons, 'updated_ids' => array_map( 'intval', $updated ), 'updated_alts' => (object) $alts ) );
     }
 
     /**
@@ -382,7 +494,9 @@ class ALTGENIX_Core {
             }
             $result = $this->run_processing( $attachment_id, $is_bulk, $options, $rename_override, $delete_old );
             if ( is_wp_error( $result ) && get_post_meta( $attachment_id, '_altgenix_processed', true ) ) {
-                $result->add_data( array( 'still_processed' => true ) );
+                // Merged, because add_data() replaces what the error already carries (stop_run).
+                $data = $result->get_error_data();
+                $result->add_data( array_merge( is_array( $data ) ? $data : array(), array( 'still_processed' => true ) ) );
             }
             return $result;
         } finally {
@@ -415,7 +529,7 @@ class ALTGENIX_Core {
         $api = new ALTGENIX_API();
         if ( ! $api->is_configured() ) {
             $this->set_processing_error( $id, 'Save and verify an API key in Settings before generating AI metadata.' );
-            return new WP_Error( 'altgenix_configuration', 'AI is not set up yet. Add and verify an API key in AltGenix AI > Settings. Nothing was changed.' );
+            return new WP_Error( 'altgenix_configuration', 'AI is not set up yet. Add and verify an API key in AltGenix AI > Settings. Nothing was changed.', array( 'stop_run' => true ) );
         }
         // When rename_file is enabled above, the filename is requested in this
         // same AI response as the enabled metadata fields.
@@ -426,7 +540,8 @@ class ALTGENIX_Core {
             $error = ALTGENIX_API::redact_error( $response->get_error_message() );
             $this->set_processing_error( $id, $error );
             // A degraded run must remain a failure, never count as optimized.
-            return new WP_Error( $response->get_error_code(), $error );
+            $code = $response->get_error_code();
+            return new WP_Error( $code, $error, in_array( $code, self::STOP_RUN_CODES, true ) ? array( 'stop_run' => true ) : '' );
         }
         $parsed = self::parse_metadata( isset( $response['text'] ) ? $response['text'] : '', $options );
         if ( is_wp_error( $parsed ) ) {
