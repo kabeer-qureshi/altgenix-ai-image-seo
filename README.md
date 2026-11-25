@@ -189,6 +189,15 @@ does not turn already-optimized media back into a queue.
 
 ## Changelog
 
+### 1.3.1
+
+- **WordPress 7.2.** Its Media Library prepares image sizes in the browser, as the block editor has
+  done since 7.1, so an upload arrives in several requests. New images were processed before the
+  last of them; with *Rename File* on, the new filename could be lost or the image marked Failed.
+  Processing now starts once the upload is complete. An upload left unfinished, for example by
+  closing the tab, is processed an hour later.
+- The admin script no longer uses `$.trim()`, which jQuery 4 removes.
+
 ### 1.3.0
 
 - **OpenRouter** as a fifth provider: a few hundred image-capable models on one key, cheapest
@@ -207,22 +216,6 @@ does not turn already-optimized media back into a queue.
 - Timeouts say the provider did not answer in time instead of showing the raw cURL error, and
   *Mark as done* says why an image was skipped.
 - A new look that follows WordPress's own admin design.
-
-### 1.2.2
-
-- On the attachment edit screen, pressing **Update** after generating no longer puts the old title
-  and alt text back.
-- Typing in the Media Library popup and clicking Generate straight away no longer lets the typed
-  text overwrite the generated text.
-- Renaming a file no longer breaks images already placed in posts: their `srcset`, width and height
-  stay intact. Deleting a renamed image now also removes the older copies the plugin kept.
-- **Remove Key** really removes the key, and saving settings no longer shows a false error.
-- A failed regeneration no longer sends an already processed image back into the paid queue, and
-  **Mark as done** now accepts failed images.
-- Gemini models are asked for the least thinking they allow; Claude 5 models are listed.
-- Clearer wording throughout: *Filename (free, no API key)* and *AI (uses your API key)*,
-  *Process all remaining*, *Regenerate selected* and *Mark as done* with live counts, and an
-  *Automatic (cheapest available)* model choice.
 
 **[Full changelog for every release →](readme.txt)**
 

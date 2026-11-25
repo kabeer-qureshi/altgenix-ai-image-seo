@@ -17,6 +17,9 @@ jQuery(function ($) {
     var modelStates = {};
     var verifyingModels = false;
 
+    // $.trim() is deprecated and gone in jQuery 4. Same result: null and undefined give "".
+    function trimText(value) { return value === null || value === undefined ? '' : String(value).trim(); }
+
     function request(action, data) {
         return $.ajax({ url: config.url, type: 'POST', dataType: 'json', timeout: 55000,
             data: $.extend({ action: action, nonce: config.nonce }, data || {}) });
@@ -209,7 +212,7 @@ jQuery(function ($) {
     // tablet could not read a single one of them.
     $('.altgenix-tip').each(function () {
         var $tip = $(this);
-        var description = $.trim($tip.find('.altgenix-tip-content').text());
+        var description = trimText($tip.find('.altgenix-tip-content').text());
         $tip.attr({ tabindex: '0', role: 'button', 'aria-label': description ? 'Help: ' + description : 'More information' });
     });
     $(document).on('keydown', '.altgenix-tip', function (event) {
@@ -236,18 +239,18 @@ jQuery(function ($) {
     // of truth; the custom control mirrors it without exposing or duplicating secrets.
     var customSelectCounter = 0;
     function customSelectLabel($select) {
-        var explicit = $.trim($select.attr('aria-label') || '');
+        var explicit = trimText($select.attr('aria-label') || '');
         if (explicit) { return explicit; }
         var id = $select.attr('id');
         if (id) {
             var linked = $('label[for]').filter(function () { return $(this).attr('for') === id; }).first();
-            if (linked.length) { return $.trim(linked.text()); }
+            if (linked.length) { return trimText(linked.text()); }
         }
         var rowLabel = $select.closest('.altgenix-form-row').children('label').first();
         if (rowLabel.length) {
             var clone = rowLabel.clone();
             clone.children().remove();
-            var text = $.trim(clone.text());
+            var text = trimText(clone.text());
             if (text) { return text; }
         }
         if (id === 'altgenix-status-filter') { return 'Filter by AltGenix status'; }
@@ -271,7 +274,7 @@ jQuery(function ($) {
     // box that narrows it as you type, instead of a long scroll.
     var SEARCHABLE_AFTER = 12;
     function filterCustomOptions($menu, query) {
-        query = $.trim(String(query || '')).toLowerCase();
+        query = trimText(String(query || '')).toLowerCase();
         var shown = 0;
         $menu.children('.altgenix-select-option').each(function () {
             var match = !query || $(this).text().toLowerCase().indexOf(query) !== -1;
@@ -345,7 +348,7 @@ jQuery(function ($) {
         $wrapper.append($button, $menu);
         var inlineStyle = $select.attr('style') || '';
         var maxWidth = inlineStyle.match(/max-width\s*:\s*([^;]+)/i);
-        if (maxWidth) { $wrapper.css('max-width', $.trim(maxWidth[1])); }
+        if (maxWidth) { $wrapper.css('max-width', trimText(maxWidth[1])); }
         $select.addClass('altgenix-select-native').attr({ 'aria-hidden': 'true', tabindex: '-1' }).after($wrapper);
         refreshCustomSelect($select);
 
@@ -465,7 +468,7 @@ jQuery(function ($) {
     });
     $('#altgenix-search-form').on('submit', function (event) {
         event.preventDefault();
-        applyFilter('altgenix_search', $.trim($('#altgenix-search').val()));
+        applyFilter('altgenix_search', trimText($('#altgenix-search').val()));
     });
     function selectedImageIds() {
         return $('.altgenix-row-select:checked').map(function () { return parseInt($(this).val(), 10); }).get().filter(function (id) { return !!id; });
@@ -486,7 +489,7 @@ jQuery(function ($) {
     updateBulkSelectionUI();
 
     function trimWords(text, limit) {
-        var words = $.trim(String(text || '')).split(/\s+/);
+        var words = trimText(String(text || '')).split(/\s+/);
         return words.length <= limit ? words.join(' ') : words.slice(0, limit).join(' ') + '\u2026';
     }
     function showAlt($cell, alt) {
@@ -727,7 +730,7 @@ jQuery(function ($) {
     function matchingModelState() {
         var state = modelStates[activeProvider];
         if (!state) { return null; }
-        var typed = $.trim($('#altgenix_api_key').val());
+        var typed = trimText($('#altgenix_api_key').val());
         if (typed) {
             return !state.usesSavedKey && state.keyDraft === typed ? state : null;
         }
@@ -755,13 +758,13 @@ jQuery(function ($) {
             var selection = state.models.indexOf(state.selection) >= 0 || (missing && state.selection === missing) ? state.selection : '';
             state.selection = selection;
             $select.val(selection).prop('disabled', false);
-            var typed = $.trim($('#altgenix_api_key').val()) !== '';
+            var typed = trimText($('#altgenix_api_key').val()) !== '';
             $('#altgenix_verified_note')
                 .removeClass('is-neutral is-error').addClass('is-success')
                 .text('Key verified · ' + state.models.length + ' model' + (state.models.length === 1 ? '' : 's') + ' available.' + (state.note ? ' ' + state.note : '') + (typed ? ' Save Settings to use this key.' : ''));
         } else {
             $select.append($('<option></option>').val('').text('Verify API key to load models')).val('').prop('disabled', true);
-            var hasKey = $.trim($('#altgenix_api_key').val()) !== '' || !!savedKeys[activeProvider];
+            var hasKey = trimText($('#altgenix_api_key').val()) !== '' || !!savedKeys[activeProvider];
             $('#altgenix_verified_note')
                 .removeClass('is-success is-error').addClass('is-neutral')
                 .text(hasKey ? 'Verify the API key to load available models.' : 'Enter an API key, then verify it to load available models.');
@@ -775,7 +778,7 @@ jQuery(function ($) {
         var ai = $('#altgenix_mode').val() === 'ai';
         var $keyInput = $('#altgenix_api_key');
         var hasSavedKey = !!savedKeys[activeProvider];
-        var typedKey = $.trim($keyInput.val()) !== '';
+        var typedKey = trimText($keyInput.val()) !== '';
         var editingKey = !!editingKeys[activeProvider] || typedKey;
 
         $('#altgenix_provider_row, #altgenix_api_row, #altgenix_model_row, #altgenix_lang_row, #altgenix_rename_file_row, .altgenix-length-col, .altgenix-ai-only-row').toggle(ai);
@@ -815,7 +818,7 @@ jQuery(function ($) {
         $('#altgenix_key_help_link').attr({ href: info[0], rel: 'noopener noreferrer' }).text('Get your ' + info[1] + ' API key');
         $('.altgenix-provider-note').each(function () { $(this).toggle($(this).attr('data-provider') === activeProvider); });
 
-        var canVerify = ai && ($.trim($keyInput.val()) !== '' || hasSavedKey) && !verifyingModels;
+        var canVerify = ai && (trimText($keyInput.val()) !== '' || hasSavedKey) && !verifyingModels;
         $('#altgenix-verify-models').prop('disabled', !canVerify);
     }
 
@@ -850,7 +853,7 @@ jQuery(function ($) {
     $('#altgenix-verify-models').on('click', function () {
         if (verifyingModels) { return; }
         var provider = activeProvider;
-        var typedKey = $.trim($('#altgenix_api_key').val());
+        var typedKey = trimText($('#altgenix_api_key').val());
         if (!typedKey && !savedKeys[provider]) { toast('Enter an API key before verifying models.', true); return; }
 
         var $button = $(this);
@@ -888,7 +891,7 @@ jQuery(function ($) {
             $button.removeClass('is-loading');
             $icon.removeClass('altgenix-spin');
             $button.find('span').last().text(originalText);
-            var canVerifyNow = $('#altgenix_mode').val() === 'ai' && ($.trim($('#altgenix_api_key').val()) !== '' || !!savedKeys[activeProvider]);
+            var canVerifyNow = $('#altgenix_mode').val() === 'ai' && (trimText($('#altgenix_api_key').val()) !== '' || !!savedKeys[activeProvider]);
             $button.prop('disabled', !canVerifyNow);
         });
     });

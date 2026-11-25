@@ -6,7 +6,11 @@ class ALTGENIX_Core {
     private const AI_TARGET_EDGE = 1024;
     private const AI_MIN_EDGE = 512;
     private const AI_RESIZE_ABOVE = 2048;
+    /** How long an upload the browser never finished waits before it is processed anyway. */
+    private const UNFINISHED_UPLOAD_DELAY = HOUR_IN_SECONDS;
     private $ready_at_shutdown = array();
+    /** Uploads from this request whose image sizes the browser has yet to send. */
+    private $browser_uploads = array();
 
     public static function default_settings() {
         return array(
@@ -66,7 +70,8 @@ class ALTGENIX_Core {
         add_action( 'add_attachment', array( $this, 'schedule_background_processing' ) );
         add_filter( 'wp_generate_attachment_metadata', array( $this, 'attachment_metadata_ready' ), 100, 3 );
         add_action( 'shutdown', array( $this, 'finish_uploads' ) );
-        add_action( 'altgenix_background_process_image', array( $this, 'process_new_attachment' ), 10, 1 );
+        add_action( 'rest_after_insert_attachment', array( $this, 'note_browser_upload' ), 10, 3 );
+        add_action( 'altgenix_background_process_image', array( $this, 'process_queued_upload' ), 10, 1 );
         // Renamed attachments: keep old embeds responsive, and clean up the kept files on delete.
         add_filter( 'wp_calculate_image_srcset_meta', array( 'ALTGENIX_Files', 'filter_srcset_meta' ), 10, 4 );
         add_filter( 'wp_image_src_get_dimensions', array( 'ALTGENIX_Files', 'filter_src_dimensions' ), 10, 4 );
@@ -98,7 +103,24 @@ class ALTGENIX_Core {
         $this->ready_at_shutdown[ $attachment_id ] = $attachment_id;
     }
 
+    /**
+     * Action: rest_after_insert_attachment.
+     *
+     * Since WordPress 7.1 (block editor) and 7.2 (Media Library) the browser can make
+     * the image sizes itself. The upload request then says generate_sub_sizes = false,
+     * the sizes and the scaled copy follow one request at a time, and a "finalize"
+     * request writes them all to the metadata. Metadata exists from the first request
+     * on, so it no longer means the upload is complete: renaming in between either
+     * failed on mismatched paths or had its new filename overwritten by the scaled copy.
+     */
+    public function note_browser_upload( $attachment, $request, $creating = true ) {
+        if ( ! $creating || ! isset( $attachment->ID ) || false !== $request['generate_sub_sizes'] ) { return; }
+        $this->browser_uploads[ $attachment->ID ] = $attachment->ID;
+    }
+
     public function attachment_metadata_ready( $metadata, $attachment_id, $context = 'create' ) {
+        // The finalize request runs this filter with 'update', once everything is in.
+        if ( $context === 'update' ) { unset( $this->browser_uploads[ $attachment_id ] ); }
         if ( get_post_meta( $attachment_id, '_altgenix_auto', true ) ) {
             $this->ready_at_shutdown[ $attachment_id ] = $attachment_id;
         }
@@ -109,12 +131,34 @@ class ALTGENIX_Core {
         foreach ( $this->ready_at_shutdown as $attachment_id ) {
             $meta = wp_get_attachment_metadata( $attachment_id );
             if ( ! is_array( $meta ) || empty( $meta['file'] ) ) { continue; }
-            update_post_meta( $attachment_id, '_altgenix_auto', '1' );
-            if ( ! wp_next_scheduled( 'altgenix_background_process_image', array( $attachment_id ) ) ) {
-                wp_schedule_single_event( time() + 10, 'altgenix_background_process_image', array( $attachment_id ) );
+            $args = array( $attachment_id );
+            if ( isset( $this->browser_uploads[ $attachment_id ] ) ) {
+                // Stays 'waiting' until finalize. A closed tab never sends one, so this
+                // event is what keeps the image from waiting forever.
+                if ( ! wp_next_scheduled( 'altgenix_background_process_image', $args ) ) {
+                    wp_schedule_single_event( time() + self::UNFINISHED_UPLOAD_DELAY, 'altgenix_background_process_image', $args );
+                }
+                continue;
             }
+            update_post_meta( $attachment_id, '_altgenix_auto', '1' );
+            $next = wp_next_scheduled( 'altgenix_background_process_image', $args );
+            if ( $next && $next > time() + 10 ) {
+                wp_clear_scheduled_hook( 'altgenix_background_process_image', $args );
+                $next = false;
+            }
+            if ( ! $next ) { wp_schedule_single_event( time() + 10, 'altgenix_background_process_image', $args ); }
         }
         $this->ready_at_shutdown = array();
+        $this->browser_uploads = array();
+    }
+
+    /** Cron. An upload still 'waiting' here was never finalized: work with what arrived. */
+    public function process_queued_upload( $attachment_id ) {
+        $attachment_id = absint( $attachment_id );
+        if ( get_post_meta( $attachment_id, '_altgenix_auto', true ) === 'waiting' ) {
+            update_post_meta( $attachment_id, '_altgenix_auto', '1' );
+        }
+        return $this->process_new_attachment( $attachment_id );
     }
 
     private function authorize( $capability = 'upload_files' ) {

@@ -2,9 +2,9 @@
 Contributors: abdulkabeerdeveloper2530
 Tags: auto alt text, seo, image optimization, openai, claude
 Requires at least: 5.8
-Tested up to: 7.1
+Tested up to: 7.2
 Requires PHP: 7.4
-Stable tag: 1.3.0
+Stable tag: 1.3.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -86,6 +86,9 @@ Settings and queues are per-site. Network uninstall clears plugin settings, jobs
 
 == Upgrade Notice ==
 
+= 1.3.1 =
+Compatible with WordPress 7.2. Fixes automatic renaming of new uploads when the browser prepares the image sizes (WordPress 7.1 and later). Recommended before updating to WordPress 7.2.
+
 = 1.3.0 =
 Adds OpenRouter and Bulk Optimizer filters, and fixes the "model is no longer available" errors some Gemini models give. Recommended for everyone.
 
@@ -99,6 +102,10 @@ Fixes two faults introduced in 1.2.0: image uploads could hang on "Crunching..."
 Security and data-integrity fixes: server-side keys, safe file copies, reliable queues and strict AI validation. Rotate keys if a previous build exposed them to untrusted uploaders. Back up and test on staging first.
 
 == Changelog ==
+
+= 1.3.1 =
+* Fix: On WordPress 7.2 the Media Library can prepare image sizes in the browser, as the block editor already does since 7.1. New uploads were processed before those sizes had arrived, so with Rename File on the new filename could be lost or the image marked Failed. Processing now starts once the upload is complete. If an upload is left unfinished, for example by closing the tab, the image is processed an hour later.
+* Compatibility: Tested with WordPress 7.2. The admin script no longer uses a jQuery function that jQuery 4 removes.
 
 = 1.3.0 =
 * New: OpenRouter as a fifth AI provider. One key gives access to a few hundred models that can read images, listed cheapest first with their prices and searchable by name. Free models are included, within OpenRouter's daily limits. Requested on the support forum.
